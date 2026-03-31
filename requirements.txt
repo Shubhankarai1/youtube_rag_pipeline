@@ -1,0 +1,10 @@
+streamlit
+openai
+youtube-transcript-api
+tiktoken
+psycopg[binary]
+pgvector
+sqlalchemy
+python-dotenv
+pydantic
+pytest
