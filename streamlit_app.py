@@ -24,12 +24,13 @@ from youtube_rag.services.video_ingestion import (
     StaticAvailabilityChecker,
     VideoIngestionService,
 )
+from youtube_rag.services.transcript_service import TranscriptService
 from youtube_rag.ui.pages import render_video_intake_page
 from youtube_rag.utils.logging import configure_logging
 
 
 def main() -> None:
-    """Boot the Streamlit shell and Phase 1 intake flow."""
+    """Boot the Streamlit shell and Phase 1-2 flow."""
 
     missing_settings = get_missing_required_settings()
 
@@ -44,10 +45,12 @@ def main() -> None:
         duplicate_repository=InMemoryVideoRegistry(),
         availability_checker=StaticAvailabilityChecker(),
     )
+    transcript_service = TranscriptService()
 
     # Render UI
     render_video_intake_page(
         ingestion_service,
+        transcript_service,
         missing_settings=missing_settings,
     )
 
