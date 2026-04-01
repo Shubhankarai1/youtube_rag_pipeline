@@ -38,14 +38,17 @@ Output Format:
  }
 ]
 
-3.3 Token-Aware Chunking
+3.3 Sentence-Aware BERT Chunking
 Goal: Optimize retrieval quality
 Approach:
-Use tiktoken for token counting
-Chunk size: ~300–500 tokens
-Overlap: 10–20% (critical for context continuity)
+Use NLTK sent_tokenize for sentence segmentation
+Use a HuggingFace BERT tokenizer (e.g. bert-base-uncased) for token counting
+Chunk size: <= 512 BERT tokens
 Logic:
-Merge transcript lines into chunks
+Split transcript text into sentences
+Map every sentence to a start and end timestamp
+Sequentially add whole sentences to a chunk until adding another sentence would exceed 512 tokens
+Never split a sentence across chunks
 Maintain:
 chunk_id
 start_time
@@ -126,7 +129,7 @@ Clickable timestamps → open video
 [Backend API / Logic Layer]
       ↓
 1. Transcript Extractor
-2. Chunking Engine (tiktoken)
+2. Chunking Engine (NLTK + HuggingFace BERT tokenizer)
 3. Embedding Generator (OpenAI)
 4. Vector Store (PostgreSQL + pgvector)
       ↓
@@ -178,12 +181,12 @@ Backend: Python
 LLM: OpenAI
 Embeddings: OpenAI
 DB: PostgreSQL + pgvector
-Chunking: tiktoken
+Chunking: NLTK + HuggingFace BERT tokenizer
 Transcript: youtube-transcript-api
 
 12. 💡 Key Design Principles
 Retrieval quality > fancy UI
-Overlap chunking is non-negotiable
 Metadata = huge leverage (timestamps)
 Always validate relevance before answering 
+Never split a sentence across chunk boundaries
 

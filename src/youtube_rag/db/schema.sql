@@ -13,3 +13,10 @@ CREATE TABLE IF NOT EXISTS video_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_video_chunks_video_id
     ON video_chunks (video_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_video_chunks_chunk_id
+    ON video_chunks (chunk_id);
+
+CREATE INDEX IF NOT EXISTS idx_video_chunks_embedding_cosine
+    ON video_chunks USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 100);

@@ -89,24 +89,27 @@ Retrieve transcript data in a consistent internal format and handle transcript-r
 - The system can fetch and normalize transcript data for supported videos and stop cleanly when transcript data is unavailable.
 - Transcript tests and failure-path tests pass.
 
-## Phase 3: Token-Aware Chunking and Metadata Preparation
+## Phase 3: Sentence-Aware BERT Chunking and Metadata Preparation
 
 ### Goal
-Convert transcripts into retrieval-optimized chunks with accurate timing metadata.
+Convert transcripts into retrieval-optimized chunks using sentence boundaries and BERT token limits while preserving accurate timing metadata.
 
 ### Significant Components
-- Integrate `tiktoken` for token counting.
-- Implement chunking logic using:
-  - target chunk size of 300 to 500 tokens
-  - overlap of 10% to 20%
-- Merge transcript lines into semantically coherent chunks.
+- Use `nltk.sent_tokenize` to divide transcript text into sentences.
+- Map each sentence to a `start_time` and `end_time`.
+- Integrate a HuggingFace BERT tokenizer such as `bert-base-uncased` for token counting.
+- Implement chunking logic that:
+  - adds sentences sequentially
+  - keeps each chunk at `<= 512` BERT tokens
+  - never splits a sentence across chunks
+  - preserves sentence order and chunk timing continuity
 - Generate chunk metadata:
   - `chunk_id`
   - `video_id`
   - `start_time`
   - `end_time`
   - chunk text
-- Add protections for long-video processing and token explosion.
+- Fail fast when a single sentence exceeds the 512-token BERT limit, because that cannot be chunked without violating the sentence-boundary rule.
 
 ### Deliverables
 - Reusable chunking engine.
@@ -117,19 +120,19 @@ Convert transcripts into retrieval-optimized chunks with accurate timing metadat
 - Unit tests for:
   - token counting
   - chunk boundary creation
-  - overlap behavior
+  - sentence timestamp mapping
   - metadata assignment
 - Edge-case tests for:
   - very short transcripts
   - long transcripts
   - transcript segments with sparse text
+  - a single sentence exceeding 512 BERT tokens
 - Manual review of generated chunks for timing accuracy and contextual continuity.
 
 ### Success Metrics
-- Chunk sizes remain within the intended token range in the majority of cases.
-- Overlap is present and measurable between adjacent chunks.
+- Chunk sizes never exceed 512 BERT tokens unless processing is explicitly rejected.
 - Start and end timestamps align with the underlying transcript segments.
-- Retrieval-oriented chunk review shows minimal loss of context at chunk boundaries.
+- Retrieval-oriented chunk review shows sentence-complete chunks with no sentence splits at chunk boundaries.
 
 ### Exit Criteria
 - Transcript inputs consistently produce valid chunk objects ready for embedding and storage.

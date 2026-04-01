@@ -22,8 +22,8 @@ class AppConfig(BaseModel):
     log_level: str = "INFO"
     top_k_results: int = 5
     similarity_threshold: float = 0.75
-    chunk_target_tokens: int = 400
-    chunk_overlap_percent: int = 15
+    chunk_max_tokens: int = 512
+    bert_tokenizer_name: str = "bert-base-uncased"
 
 
 # ✅ Keep this simple and independent of cached config
@@ -66,6 +66,6 @@ def get_config() -> AppConfig:
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         top_k_results=int(os.getenv("TOP_K_RESULTS", "5")),
         similarity_threshold=float(os.getenv("SIMILARITY_THRESHOLD", "0.75")),
-        chunk_target_tokens=int(os.getenv("CHUNK_TARGET_TOKENS", "400")),
-        chunk_overlap_percent=int(os.getenv("CHUNK_OVERLAP_PERCENT", "15")),
+        chunk_max_tokens=int(os.getenv("CHUNK_MAX_TOKENS", "512")),
+        bert_tokenizer_name=os.getenv("BERT_TOKENIZER_NAME", "bert-base-uncased"),
     )
