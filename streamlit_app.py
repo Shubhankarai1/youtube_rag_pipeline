@@ -54,8 +54,7 @@ def main() -> None:
     )
     transcript_service = TranscriptService()
     chunking_service = ChunkingService(
-        tokenizer_name=config.bert_tokenizer_name if config else "bert-base-uncased",
-        max_chunk_tokens=config.chunk_max_tokens if config else 512,
+        max_chunk_tokens=config.chunk_max_tokens if config else 500,
     )
     if config is not None:
         repository = PgVectorChunkRepository(config.database_url)

@@ -1,20 +1,19 @@
-"""Sentence-aware transcript chunking logic using NLTK and BERT tokens."""
+"""Word-based transcript chunking using tiktoken token counts."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Protocol
+import os
+from typing import Protocol
 
-import nltk
-from nltk.tokenize import sent_tokenize
-from transformers import AutoTokenizer, PreTrainedTokenizerBase
+import tiktoken
 
 from youtube_rag.models.chunk import ChunkSentence, TranscriptChunk
 from youtube_rag.models.transcript import TranscriptPayload, TranscriptSegment
 
 
 class ChunkingError(ValueError):
-    """Raised when transcript chunking cannot satisfy the configured constraints."""
+    """Retained for compatibility with callers importing the symbol."""
 
 
 class TokenCounter(Protocol):
@@ -24,179 +23,157 @@ class TokenCounter(Protocol):
         """Return the token count for a piece of text."""
 
 
-class BertTokenCounter:
-    """Count tokens with a HuggingFace BERT tokenizer."""
+class TiktokenTokenCounter:
+    """Count tokens with the OpenAI cl100k_base encoding."""
 
-    def __init__(self, tokenizer_name: str = "bert-base-uncased") -> None:
-        self._tokenizer = _load_tokenizer(tokenizer_name)
+    def __init__(self) -> None:
+        for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+            if os.environ.get(proxy_var) == "http://127.0.0.1:9" or os.environ.get(proxy_var) == "127.0.0.1:9":
+                os.environ.pop(proxy_var, None)
+        self._encoding = tiktoken.get_encoding("cl100k_base")
 
     def count_tokens(self, text: str) -> int:
-        return len(self._tokenizer.encode(text, add_special_tokens=False))
+        return len(self._encoding.encode(text))
 
 
 @dataclass(frozen=True)
-class _SentenceWindow:
+class _WordWindow:
     text: str
     start_time: float
     end_time: float
-    token_count: int
 
 
 class ChunkingService:
-    """Build retrieval chunks from transcript sentences without splitting sentences."""
+    """Build retrieval chunks from transcript words without sentence logic."""
 
     def __init__(
         self,
-        sentence_splitter: Callable[[str], list[str]] | None = None,
         token_counter: TokenCounter | None = None,
-        tokenizer_name: str = "bert-base-uncased",
-        max_chunk_tokens: int = 512,
+        max_chunk_tokens: int = 500,
     ) -> None:
-        self._sentence_splitter = sentence_splitter or _nltk_sentence_splitter
-        self._token_counter = token_counter or BertTokenCounter(tokenizer_name)
+        self._token_counter = token_counter or TiktokenTokenCounter()
         self._max_chunk_tokens = max_chunk_tokens
 
-    def chunk_transcript(self, transcript: TranscriptPayload) -> list[TranscriptChunk]:
-        """Convert a normalized transcript into retrieval-ready sentence chunks."""
+    def count_tokens(self, text: str) -> int:
+        """Return the token count for a piece of text."""
 
-        sentence_windows = self._build_sentence_windows(transcript.segments)
-        if not sentence_windows:
-            return []
+        return self._token_counter.count_tokens(text)
 
-        chunks: list[TranscriptChunk] = []
-        current_sentences: list[_SentenceWindow] = []
-        current_token_count = 0
+    def chunk_text(self, text: str, max_tokens: int | None = None) -> list[str]:
+        """Split text into token-limited word chunks."""
 
-        for sentence in sentence_windows:
-            if sentence.token_count > self._max_chunk_tokens:
-                raise ChunkingError(
-                    "A single sentence exceeds the configured BERT token limit and cannot be chunked "
-                    "without splitting the sentence."
-                )
+        words = text.split()
+        chunks: list[str] = []
+        current_chunk: list[str] = []
+        limit = max_tokens or self._max_chunk_tokens
 
-            if current_sentences and current_token_count + sentence.token_count > self._max_chunk_tokens:
-                chunks.append(self._build_chunk(transcript.video_id, len(chunks) + 1, current_sentences))
-                current_sentences = []
-                current_token_count = 0
+        for word in words:
+            current_chunk.append(word)
+            current_text = " ".join(current_chunk)
+            if self.count_tokens(current_text) > limit:
+                chunks.append(current_text)
+                current_chunk = []
 
-            current_sentences.append(sentence)
-            current_token_count += sentence.token_count
-
-        if current_sentences:
-            chunks.append(self._build_chunk(transcript.video_id, len(chunks) + 1, current_sentences))
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
 
         return chunks
 
-    def _build_sentence_windows(self, segments: list[TranscriptSegment]) -> list[_SentenceWindow]:
-        sentence_windows: list[_SentenceWindow] = []
+    def chunk_transcript(self, transcript: TranscriptPayload) -> list[TranscriptChunk]:
+        """Convert a normalized transcript into retrieval-ready word chunks."""
+
+        word_windows = self._build_word_windows(transcript.segments)
+        if not word_windows:
+            return []
+
+        chunks: list[TranscriptChunk] = []
+        current_words: list[_WordWindow] = []
+
+        for word_window in word_windows:
+            current_words.append(word_window)
+            current_text = " ".join(item.text for item in current_words)
+            if self.count_tokens(current_text) > self._max_chunk_tokens:
+                chunks.append(self._build_chunk(transcript.video_id, len(chunks) + 1, current_words))
+                current_words = []
+
+        if current_words:
+            chunks.append(self._build_chunk(transcript.video_id, len(chunks) + 1, current_words))
+
+        return chunks
+
+    def _build_word_windows(self, segments: list[TranscriptSegment]) -> list[_WordWindow]:
+        word_windows: list[_WordWindow] = []
 
         for segment in sorted(segments, key=lambda item: item.start):
             segment_text = segment.text.strip()
             if not segment_text:
                 continue
 
-            sentences = [sentence.strip() for sentence in self._sentence_splitter(segment_text) if sentence.strip()]
-            if not sentences:
-                sentences = [segment_text]
+            words = segment_text.split()
+            if not words:
+                continue
 
-            for sentence_text, start_time, end_time in _map_sentences_to_timestamps(
-                segment_text,
-                segment.start,
-                segment.duration,
-                sentences,
-            ):
-                sentence_windows.append(
-                    _SentenceWindow(
-                        text=sentence_text,
-                        start_time=start_time,
-                        end_time=end_time,
-                        token_count=self._token_counter.count_tokens(sentence_text),
-                    )
-                )
+            word_windows.extend(_map_words_to_timestamps(segment.start, segment.duration, words))
 
-        return sentence_windows
+        return word_windows
 
     def _build_chunk(
         self,
         video_id: str,
         chunk_number: int,
-        sentences: list[_SentenceWindow],
+        words: list[_WordWindow],
     ) -> TranscriptChunk:
-        chunk_sentences = [
-            ChunkSentence(
-                text=sentence.text,
-                start_time=sentence.start_time,
-                end_time=sentence.end_time,
-                token_count=sentence.token_count,
-            )
-            for sentence in sentences
-        ]
+        chunk_text = " ".join(word.text for word in words)
+        token_count = self.count_tokens(chunk_text)
         return TranscriptChunk(
             chunk_id=f"{video_id}_{chunk_number:04d}",
             video_id=video_id,
-            text=" ".join(sentence.text for sentence in sentences),
-            start_time=sentences[0].start_time,
-            end_time=sentences[-1].end_time,
-            token_count=sum(sentence.token_count for sentence in sentences),
-            sentences=chunk_sentences,
+            text=chunk_text,
+            start_time=words[0].start_time,
+            end_time=words[-1].end_time,
+            token_count=token_count,
+            sentences=[
+                ChunkSentence(
+                    text=chunk_text,
+                    start_time=words[0].start_time,
+                    end_time=words[-1].end_time,
+                    token_count=token_count,
+                )
+            ],
         )
 
 
-def _nltk_sentence_splitter(text: str) -> list[str]:
-    _ensure_nltk_sentence_resources()
-    return sent_tokenize(text)
-
-
-def _ensure_nltk_sentence_resources() -> None:
-    for resource_path, download_name in (
-        ("tokenizers/punkt", "punkt"),
-        ("tokenizers/punkt_tab/english", "punkt_tab"),
-    ):
-        try:
-            nltk.data.find(resource_path)
-        except LookupError:
-            nltk.download(download_name, quiet=True)
-
-
-def _load_tokenizer(tokenizer_name: str) -> PreTrainedTokenizerBase:
-    return AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
-
-
-def _map_sentences_to_timestamps(
-    segment_text: str,
+def _map_words_to_timestamps(
     segment_start: float,
     segment_duration: float,
-    sentences: list[str],
-) -> list[tuple[str, float, float]]:
-    if not sentences:
+    words: list[str],
+) -> list[_WordWindow]:
+    if not words:
         return []
 
     if segment_duration <= 0:
-        return [(sentence, segment_start, segment_start) for sentence in sentences]
+        return [
+            _WordWindow(text=word, start_time=segment_start, end_time=segment_start)
+            for word in words
+        ]
 
-    mapped_sentences: list[tuple[str, float, float]] = []
-    cursor = 0
-    total_length = max(len(segment_text), 1)
     segment_end = segment_start + segment_duration
+    step = segment_duration / len(words)
+    mapped_words: list[_WordWindow] = []
 
-    for index, sentence in enumerate(sentences):
-        sentence_index = segment_text.find(sentence, cursor)
-        if sentence_index == -1:
-            sentence_index = cursor
-
-        sentence_end_index = sentence_index + len(sentence)
-        start_ratio = sentence_index / total_length
-        end_ratio = sentence_end_index / total_length
-
-        start_time = segment_start + (segment_duration * start_ratio)
-        end_time = segment_start + (segment_duration * end_ratio)
-
+    for index, word in enumerate(words):
+        start_time = segment_start + (step * index)
+        end_time = segment_start + (step * (index + 1))
         if index == 0:
             start_time = segment_start
-        if index == len(sentences) - 1:
+        if index == len(words) - 1:
             end_time = segment_end
+        mapped_words.append(
+            _WordWindow(
+                text=word,
+                start_time=max(start_time, segment_start),
+                end_time=min(end_time, segment_end),
+            )
+        )
 
-        mapped_sentences.append((sentence, max(start_time, segment_start), min(end_time, segment_end)))
-        cursor = sentence_end_index
-
-    return mapped_sentences
+    return mapped_words

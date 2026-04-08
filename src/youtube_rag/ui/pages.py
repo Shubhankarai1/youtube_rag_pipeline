@@ -25,9 +25,10 @@ def render_video_intake_page(
     """Render the Phase 1-5 Streamlit workflow."""
 
     st.set_page_config(page_title="YouTube RAG Pipeline", page_icon="🎥", layout="centered")
+    _render_retrieved_context_sidebar(st.session_state.get("latest_qa_response"))
     st.title("YouTube RAG Pipeline")
     st.caption(
-        "Phases 1-5: validate a YouTube URL, extract its transcript, build sentence-aware chunks, store embeddings, and answer grounded questions."
+        "Phases 1-5: validate a YouTube URL, extract its transcript, build token-aware chunks, store embeddings, and answer grounded questions."
     )
     if missing_settings:
         st.warning(
@@ -50,7 +51,7 @@ def render_video_intake_page(
                 transcript_response = transcript_service.extract(response.payload.video_id)
 
                 if transcript_response.success and transcript_response.payload:
-                    st.write("Splitting transcript into sentences and building BERT-sized chunks.")
+                    st.write("Splitting transcript into token-limited word chunks.")
                     try:
                         chunks = chunking_service.chunk_transcript(transcript_response.payload)
                     except ChunkingError as exc:
@@ -128,6 +129,7 @@ def render_video_intake_page(
             qa_response = qa_service.answer_question(
                 QARequest(video_id=processed_video_id, question=question.strip())
             )
+            st.session_state["latest_qa_response"] = qa_response.model_dump(mode="json")
             _render_qa_response(qa_response)
 
 
@@ -154,22 +156,28 @@ def _render_qa_response(response: QAResponse) -> None:
         st.success(response.message)
         st.subheader("Answer")
         st.write(response.answer)
-    elif response.status == QAStatus.IRRELEVANT:
+    elif response.status in {QAStatus.IRRELEVANT, QAStatus.NO_CONTEXT}:
         st.warning(response.message)
     else:
         st.error(response.message)
 
-    if response.sources:
-        st.subheader("Retrieved Sources")
-        st.json(
-            [
-                {
-                    "chunk_id": chunk.chunk_id,
-                    "start_time": chunk.start_time,
-                    "end_time": chunk.end_time,
-                    "similarity_score": chunk.similarity_score,
-                    "text": chunk.text,
-                }
-                for chunk in response.sources
-            ]
+
+def _render_retrieved_context_sidebar(response_data: dict | None) -> None:
+    st.sidebar.subheader("Retrieved Context")
+    if not response_data or not response_data.get("sources"):
+        st.sidebar.caption("Ask a question to inspect the retrieved chunks.")
+        return
+
+    for index, chunk in enumerate(response_data["sources"], start=1):
+        st.sidebar.markdown(f"**Chunk {index}**")
+        similarity_score = chunk.get("similarity_score", 0.0)
+        start_time = chunk.get("start_time", 0.0)
+        end_time = chunk.get("end_time", 0.0)
+        chunk_id = chunk.get("chunk_id", "unknown")
+        st.sidebar.caption(
+            f"Score: {similarity_score:.3f} | "
+            f"Chunk ID: `{chunk_id}` | "
+            f"Timestamp: {start_time:.2f}s - {end_time:.2f}s"
         )
+        st.sidebar.write(chunk.get("text", ""))
+        st.sidebar.divider()

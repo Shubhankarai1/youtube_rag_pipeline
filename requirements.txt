@@ -1,8 +1,7 @@
 streamlit>=1.40
 openai>=1.0
 youtube-transcript-api>=0.6
-nltk>=3.9
-transformers>=4.45
+tiktoken>=0.8
 psycopg[binary]>=3.2
 pgvector>=0.3
 sqlalchemy>=2.0

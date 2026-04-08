@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Protocol
 
 from openai import OpenAI
@@ -9,6 +10,9 @@ from openai import OpenAI
 from youtube_rag.models.chunk import RetrievedChunk
 from youtube_rag.models.qa import QARequest, QAResponse, QAStatus
 from youtube_rag.services.retrieval_service import RetrievalService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AnswerGenerator(Protocol):
@@ -33,8 +37,7 @@ class OpenAIAnswerGenerator:
                 {
                     "role": "system",
                     "content": (
-                        "Answer only from the provided transcript context. "
-                        "If the context is insufficient, say so plainly. "
+                        "Answer ONLY using the provided context. If unsure, say so. "
                         "Cite timestamps in parentheses when helpful."
                     ),
                 },
@@ -71,11 +74,20 @@ class QAService:
                 message=f"Question answering failed during retrieval: {exc}",
             )
 
+        logger.info(
+            "Question retrieval completed",
+            extra={
+                "video_id": request.video_id,
+                "retrieved_chunk_count": len(retrieved_chunks),
+                "similarity_scores": [chunk.similarity_score for chunk in retrieved_chunks],
+            },
+        )
+
         if not retrieved_chunks:
             return QAResponse(
                 success=False,
-                status=QAStatus.IRRELEVANT,
-                message="This question is not sufficiently supported by the processed video context.",
+                status=QAStatus.NO_CONTEXT,
+                message="No retrieved context was available for this question.",
             )
 
         try:

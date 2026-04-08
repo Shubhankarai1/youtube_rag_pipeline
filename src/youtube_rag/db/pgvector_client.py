@@ -38,37 +38,38 @@ class PgVectorChunkRepository:
             return
 
         with self._get_connection() as connection:
-            connection.executemany(
-                """
-                INSERT INTO video_chunks (
-                    id,
-                    video_id,
-                    chunk_id,
-                    content,
-                    embedding,
-                    start_time,
-                    end_time
-                )
-                VALUES (%s, %s, %s, %s, %s::vector, %s, %s)
-                ON CONFLICT (chunk_id) DO UPDATE SET
-                    content = EXCLUDED.content,
-                    embedding = EXCLUDED.embedding,
-                    start_time = EXCLUDED.start_time,
-                    end_time = EXCLUDED.end_time
-                """,
-                [
-                    (
-                        str(uuid4()),
-                        chunk.video_id,
-                        chunk.chunk_id,
-                        chunk.text,
-                        _embedding_to_vector_literal(chunk.embedding),
-                        chunk.start_time,
-                        chunk.end_time,
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO video_chunks (
+                        id,
+                        video_id,
+                        chunk_id,
+                        content,
+                        embedding,
+                        start_time,
+                        end_time
                     )
-                    for chunk in embedded_chunks
-                ],
-            )
+                    VALUES (%s, %s, %s, %s, %s::vector, %s, %s)
+                    ON CONFLICT (chunk_id) DO UPDATE SET
+                        content = EXCLUDED.content,
+                        embedding = EXCLUDED.embedding,
+                        start_time = EXCLUDED.start_time,
+                        end_time = EXCLUDED.end_time
+                    """,
+                    [
+                        (
+                            str(uuid4()),
+                            chunk.video_id,
+                            chunk.chunk_id,
+                            chunk.text,
+                            _embedding_to_vector_literal(chunk.embedding),
+                            chunk.start_time,
+                            chunk.end_time,
+                        )
+                        for chunk in embedded_chunks
+                    ],
+                )
             connection.commit()
 
     def retrieve_similar_chunks(
@@ -116,7 +117,6 @@ class PgVectorChunkRepository:
                 similarity_score=row["similarity_score"],
             )
             for row in rows
-            if row["similarity_score"] >= similarity_threshold
         ]
 
     @contextmanager

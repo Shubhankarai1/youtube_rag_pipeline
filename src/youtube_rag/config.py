@@ -21,9 +21,8 @@ class AppConfig(BaseModel):
     app_env: str = "development"
     log_level: str = "INFO"
     top_k_results: int = 5
-    similarity_threshold: float = 0.75
-    chunk_max_tokens: int = 512
-    bert_tokenizer_name: str = "bert-base-uncased"
+    similarity_threshold: float = 0.3
+    chunk_max_tokens: int = 500
 
 
 # ✅ Keep this simple and independent of cached config
@@ -65,7 +64,6 @@ def get_config() -> AppConfig:
         app_env=os.getenv("APP_ENV", "development"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         top_k_results=int(os.getenv("TOP_K_RESULTS", "5")),
-        similarity_threshold=float(os.getenv("SIMILARITY_THRESHOLD", "0.75")),
-        chunk_max_tokens=int(os.getenv("CHUNK_MAX_TOKENS", "512")),
-        bert_tokenizer_name=os.getenv("BERT_TOKENIZER_NAME", "bert-base-uncased"),
+        similarity_threshold=float(os.getenv("SIMILARITY_THRESHOLD", "0.3")),
+        chunk_max_tokens=int(os.getenv("CHUNK_MAX_TOKENS", "500")),
     )

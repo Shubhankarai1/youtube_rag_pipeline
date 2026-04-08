@@ -1,4 +1,4 @@
-"""Tests for retrieval-gated question answering."""
+"""Tests for debug-first question answering."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def test_answer_question_returns_grounded_answer_when_context_exists() -> None:
     assert response.sources == retrieved_chunks
 
 
-def test_answer_question_marks_irrelevant_when_no_chunks_are_retrieved() -> None:
+def test_answer_question_returns_no_context_when_no_chunks_are_retrieved() -> None:
     service = QAService(
         retrieval_service=FakeRetrievalService([]),
         answer_generator=FakeAnswerGenerator("should not be used"),
@@ -59,7 +59,7 @@ def test_answer_question_marks_irrelevant_when_no_chunks_are_retrieved() -> None
     response = service.answer_question(QARequest(video_id="vid123", question="What is the capital of France?"))
 
     assert response.success is False
-    assert response.status == QAStatus.IRRELEVANT
+    assert response.status == QAStatus.NO_CONTEXT
     assert response.answer is None
 
 

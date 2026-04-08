@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Protocol
 
 from youtube_rag.models.chunk import RetrievedChunk
+
+
+logger = logging.getLogger(__name__)
 
 
 class QueryEmbeddingClient(Protocol):
@@ -46,9 +50,26 @@ class RetrievalService:
 
     def retrieve(self, query: str, *, video_id: str | None = None) -> list[RetrievedChunk]:
         query_embedding = self._embedding_client.embed_texts([query])[0]
-        return self._retriever.retrieve_similar_chunks(
+        logger.info(
+            "Query embedding generated",
+            extra={
+                "video_id": video_id,
+                "query_length": len(query),
+                "embedding_dimensions": len(query_embedding),
+            },
+        )
+        retrieved_chunks = self._retriever.retrieve_similar_chunks(
             query_embedding,
             top_k=self._top_k,
             similarity_threshold=self._similarity_threshold,
             video_id=video_id,
         )
+        logger.info(
+            "Retrieved chunks for question",
+            extra={
+                "video_id": video_id,
+                "retrieved_chunk_count": len(retrieved_chunks),
+                "similarity_scores": [chunk.similarity_score for chunk in retrieved_chunks],
+            },
+        )
+        return retrieved_chunks
