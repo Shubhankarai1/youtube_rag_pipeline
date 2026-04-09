@@ -1,5 +1,7 @@
 # YouTube RAG Pipeline Execution Roadmap
 
+## Track 1: MVP Foundation
+
 ## Phase 1: Project Foundation and Video Intake
 
 ### Goal
@@ -280,6 +282,199 @@ Turn the working pipeline into a usable MVP with operational visibility, basic s
 - The MVP is deployable, testable in a hosted environment, and operationally understandable.
 - End-to-end tests and deployment smoke tests pass.
 
+## Track 2: Advanced RAG and Continuous Knowledge Chat
+
+## Phase 7: Persistent Source Registry and Source-Centric Schema
+
+### Goal
+Evolve storage from a single-video pipeline into a persistent knowledge base where each uploaded item is a tracked source.
+
+### Significant Components
+- Introduce a `sources` table or equivalent source registry.
+- Move from `video_id`-only thinking to `source_id`, `source_type`, and `external_id` or file hash.
+- Track source processing lifecycle:
+  - pending
+  - processing
+  - ready
+  - failed
+- Associate retrieval chunks with `source_id`.
+- Preserve support for YouTube while preparing the schema for future documents.
+
+### Deliverables
+- Source-centric schema and migration plan.
+- Source model and repository layer.
+- Backward-compatible mapping from existing `video_chunks` records where needed.
+- Processing-status model for uploads.
+
+### Testing
+- Migration tests for schema creation and upgrade path.
+- Unit tests for source creation, lookup, and status transitions.
+- Integration tests for chunk-to-source association.
+
+### Success Metrics
+- Every indexed upload has a persistent source record.
+- Source lookup is stable across sessions and app restarts.
+- Existing YouTube ingestion can be represented cleanly in the new schema.
+
+### Exit Criteria
+- The system can persist source records independently of the chat session.
+- Chunk storage and retrieval can resolve source metadata reliably.
+
+## Phase 8: Idempotent Ingestion and Reprocessing Control
+
+### Goal
+Ensure uploads are processed exactly when needed and not reprocessed unnecessarily.
+
+### Significant Components
+- Replace session-only duplicate checks with persistent deduplication.
+- Define dedupe rules by source type:
+  - YouTube: `video_id`
+  - documents: file hash or canonical storage key
+- Skip work for already indexed and ready sources.
+- Allow safe retry behavior for failed sources without duplicating stored chunks.
+- Add ingestion status messages that explain whether a source was newly processed or already available.
+
+### Deliverables
+- Persistent deduplication logic.
+- Reprocessing policy and retry flow.
+- Clear ingestion response contract for:
+  - new source
+  - already indexed source
+  - failed source retry
+
+### Testing
+- Unit tests for dedupe decisions.
+- Integration tests for repeated upload attempts.
+- Failure recovery tests for interrupted or failed processing.
+
+### Success Metrics
+- Re-uploading the same source does not create duplicate vectors.
+- Failed sources can be retried safely.
+- Upload behavior is deterministic across sessions.
+
+### Exit Criteria
+- Duplicate ingestion is controlled at the database or source-registry level.
+- Repeat uploads are predictable and operationally safe.
+
+## Phase 9: Continuous Multi-Source Retrieval
+
+### Goal
+Allow the user to ask questions across all uploaded knowledge by default while preserving relevance and response quality.
+
+### Significant Components
+- Update retrieval APIs and services to support:
+  - all-content search
+  - selected-source search
+- Return source-aware retrieval results with:
+  - source_id
+  - source title
+  - source type
+  - timestamp or page reference
+- Enforce actual similarity filtering before answer generation.
+- Add retrieval ranking improvements as needed:
+  - stronger thresholding
+  - metadata filtering
+  - optional reranking
+
+### Deliverables
+- Multi-source retrieval contract.
+- Source-aware retrieval result model.
+- Updated ranking logic for larger corpora.
+- Retrieval configuration tuned for all-content search.
+
+### Testing
+- Integration tests for:
+  - all-content retrieval
+  - filtered retrieval
+  - mixed-source questions
+  - no-context results in larger corpora
+- Retrieval evaluation set covering overlapping and conflicting sources.
+
+### Success Metrics
+- Users can retrieve relevant context across all indexed uploads.
+- Retrieval quality remains stable as the number of sources grows.
+- False-positive retrieval is reduced enough to support default all-content chat.
+
+### Exit Criteria
+- The system can answer questions from a multi-source corpus without requiring a single active video.
+- Retrieval quality is acceptable for default all-content use.
+
+## Phase 10: Continuous Chat UX and Scope Controls
+
+### Goal
+Turn the interface into a continuous chat experience where uploads expand the same knowledge space instead of replacing it.
+
+### Significant Components
+- Replace the single active `processed_video_id` UI model with persistent chat scope.
+- Default chat mode:
+  - All Content
+- Optional scope mode:
+  - Selected Content
+- Show available indexed sources in a simple selector for advanced users.
+- Keep uploads and chat in the same workflow without forcing resets.
+- Surface source attribution clearly when answers use multiple uploads.
+
+### Deliverables
+- Updated Streamlit chat UX for continuous multi-source conversation.
+- Scope selector UI.
+- Source list or source picker component.
+- Multi-source answer display with visible attribution.
+
+### Testing
+- Manual UX testing for:
+  - upload, then chat
+  - upload another source, then continue chatting
+  - switch between all-content and selected-content scope
+- End-to-end tests for continuous chat session behavior.
+
+### Success Metrics
+- Users can keep chatting after new uploads without resetting the interface.
+- Scope control is understandable without cluttering the default experience.
+- Source attribution is visible whenever multiple uploads inform an answer.
+
+### Exit Criteria
+- The UI supports a seamless continuous knowledge-chat workflow.
+- Multi-source usage is understandable and usable for both beginner and advanced users.
+
+## Phase 11: Advanced Retrieval Quality and Scale Readiness
+
+### Goal
+Harden the advanced RAG system so quality remains acceptable as the corpus and query complexity increase.
+
+### Significant Components
+- Add optional reranking for retrieved chunks.
+- Introduce better answerability checks for multi-source questions.
+- Add evaluation datasets for:
+  - overlapping sources
+  - conflicting sources
+  - ambiguous questions
+  - broad all-content questions
+- Add async ingestion if upload latency becomes too high.
+- Expand observability around:
+  - ingestion queue status
+  - retrieval hit quality
+  - answer grounding quality
+
+### Deliverables
+- Retrieval quality improvements.
+- Advanced evaluation suite.
+- Async ingestion design or implementation if required.
+- Monitoring and reporting for advanced-RAG behavior.
+
+### Testing
+- Regression tests for reranking and answerability logic.
+- Load and latency tests with larger corpora.
+- Manual review of source attribution quality and grounding behavior.
+
+### Success Metrics
+- Retrieval precision remains acceptable as uploads increase.
+- Answer grounding quality does not degrade sharply in all-content mode.
+- Upload latency and query latency remain within acceptable bounds for the target users.
+
+### Exit Criteria
+- The continuous knowledge assistant is stable enough for broader use beyond MVP experimentation.
+- Advanced retrieval quality gates and performance targets are met.
+
 ## Phase Transition Rule
 
 Do not move to the next phase until the current phase satisfies all of the following:
@@ -291,9 +486,9 @@ Do not move to the next phase until the current phase satisfies all of the follo
 
 ## Recommended Execution Order Summary
 
-1. Foundation and intake
-2. Transcript extraction
-3. Token-aware chunking
-4. Embeddings and vector retrieval
-5. Answer generation and relevance detection
-6. UX hardening, observability, and deployment
+1. Phase 1 to Phase 6 to complete the MVP.
+2. Phase 7 to introduce persistent source modeling.
+3. Phase 8 to make ingestion idempotent and durable.
+4. Phase 9 to enable all-content and filtered multi-source retrieval.
+5. Phase 10 to expose continuous chat and scope controls in the UI.
+6. Phase 11 to harden retrieval quality, scale behavior, and async processing.

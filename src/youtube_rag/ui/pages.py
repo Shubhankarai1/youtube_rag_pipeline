@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import streamlit as st
 
 from youtube_rag.models.chunk import TranscriptChunk
@@ -20,15 +22,21 @@ def render_video_intake_page(
     chunking_service: ChunkingService,
     embedding_service: EmbeddingService | NullEmbeddingService,
     qa_service: QAService | NullQAService,
+    *,
+    max_question_chars: int = 500,
+    min_question_interval_seconds: float = 2.0,
     missing_settings: list[str] | None = None,
 ) -> None:
-    """Render the Phase 1-5 Streamlit workflow."""
+    """Render the Phase 1-6 Streamlit workflow."""
 
-    st.set_page_config(page_title="YouTube RAG Pipeline", page_icon="🎥", layout="centered")
+    st.set_page_config(page_title="YouTube RAG Pipeline", page_icon="film", layout="centered")
+    _initialize_ui_state()
+    _render_runtime_metrics_sidebar()
     _render_retrieved_context_sidebar(st.session_state.get("latest_qa_response"))
     st.title("YouTube RAG Pipeline")
     st.caption(
-        "Phases 1-5: validate a YouTube URL, extract its transcript, build token-aware chunks, store embeddings, and answer grounded questions."
+        "Phases 1-6: validate a YouTube URL, extract its transcript, build sentence-aware chunks, "
+        "store embeddings, answer grounded questions, and expose basic operational safeguards."
     )
     if missing_settings:
         st.warning(
@@ -51,10 +59,11 @@ def render_video_intake_page(
                 transcript_response = transcript_service.extract(response.payload.video_id)
 
                 if transcript_response.success and transcript_response.payload:
-                    st.write("Splitting transcript into token-limited word chunks.")
+                    st.write("Splitting transcript into sentence-aware BERT-token-limited chunks.")
                     try:
                         chunks = chunking_service.chunk_transcript(transcript_response.payload)
                     except ChunkingError as exc:
+                        _record_metric("processing_errors")
                         status.update(label="Chunking failed", state="error")
                         st.success(f"{response.message} {transcript_response.message}")
                         st.error(str(exc))
@@ -67,12 +76,14 @@ def render_video_intake_page(
                         try:
                             embedded_chunks = embedding_service.persist_video_chunks(chunks)
                         except EmbeddingStorageError as exc:
+                            _record_metric("processing_errors")
                             status.update(label="Embedding or storage failed", state="error")
                             st.success(f"{response.message} {transcript_response.message} Chunking complete.")
                             st.error(str(exc))
                             st.subheader("Chunk Preview")
                             st.json([_chunk_to_preview(chunk) for chunk in chunks[:3]])
                         else:
+                            _record_metric("videos_processed")
                             status.update(label="Transcript chunking and storage complete", state="complete")
                             st.success(f"{response.message} {transcript_response.message} Chunking complete.")
                             st.subheader("Video Intake")
@@ -94,6 +105,7 @@ def render_video_intake_page(
                             st.json([_chunk_to_preview(chunk) for chunk in chunks[:3]])
                             st.session_state["processed_video_id"] = response.payload.video_id
                 else:
+                    _record_metric("processing_errors")
                     status.update(label="Transcript extraction failed", state="error")
                     st.success(response.message)
                     st.error(transcript_response.message)
@@ -102,6 +114,7 @@ def render_video_intake_page(
                     st.subheader("Transcript Extraction")
                     st.json(_model_to_dict(transcript_response))
             else:
+                _record_metric("processing_errors")
                 status.update(label="Video intake failed", state="error")
                 st.error(response.message)
                 if response.payload:
@@ -116,6 +129,10 @@ def render_video_intake_page(
         st.divider()
         st.subheader("Ask Questions")
         st.caption(f"Current processed video: `{processed_video_id}`")
+        st.caption(
+            f"Questions are limited to {max_question_chars} characters with a "
+            f"{min_question_interval_seconds:.1f}s minimum interval."
+        )
         question = st.text_input(
             "Question about the processed video",
             key="qa_question_input",
@@ -123,14 +140,78 @@ def render_video_intake_page(
         )
         ask_clicked = st.button("Ask Question", type="secondary")
         if ask_clicked:
-            if not question.strip():
+            trimmed_question = question.strip()
+            if not trimmed_question:
                 st.warning("Enter a question before asking.")
                 return
+            if len(trimmed_question) > max_question_chars:
+                st.warning(f"Question is too long. Keep it under {max_question_chars} characters.")
+                return
+            if _is_rate_limited(min_question_interval_seconds):
+                st.warning("Please wait a moment before sending another question.")
+                return
+
+            _record_question_attempt()
             qa_response = qa_service.answer_question(
-                QARequest(video_id=processed_video_id, question=question.strip())
+                QARequest(video_id=processed_video_id, question=trimmed_question)
             )
             st.session_state["latest_qa_response"] = qa_response.model_dump(mode="json")
+            _record_qa_result(qa_response)
             _render_qa_response(qa_response)
+
+
+def _initialize_ui_state() -> None:
+    st.session_state.setdefault(
+        "ui_metrics",
+        {
+            "videos_processed": 0,
+            "questions_asked": 0,
+            "answers_returned": 0,
+            "no_context_answers": 0,
+            "processing_errors": 0,
+            "qa_errors": 0,
+            "last_question_at": 0.0,
+        },
+    )
+
+
+def _record_metric(metric_name: str) -> None:
+    metrics = st.session_state["ui_metrics"]
+    metrics[metric_name] = metrics.get(metric_name, 0) + 1
+
+
+def _record_question_attempt() -> None:
+    metrics = st.session_state["ui_metrics"]
+    metrics["questions_asked"] = metrics.get("questions_asked", 0) + 1
+    metrics["last_question_at"] = time.time()
+
+
+def _record_qa_result(response: QAResponse) -> None:
+    metrics = st.session_state["ui_metrics"]
+    if response.status == QAStatus.ANSWERED:
+        metrics["answers_returned"] = metrics.get("answers_returned", 0) + 1
+    elif response.status in {QAStatus.IRRELEVANT, QAStatus.NO_CONTEXT}:
+        metrics["no_context_answers"] = metrics.get("no_context_answers", 0) + 1
+    else:
+        metrics["qa_errors"] = metrics.get("qa_errors", 0) + 1
+
+
+def _is_rate_limited(min_interval_seconds: float) -> bool:
+    last_question_at = st.session_state["ui_metrics"].get("last_question_at", 0.0)
+    return (time.time() - last_question_at) < min_interval_seconds
+
+
+def _render_runtime_metrics_sidebar() -> None:
+    metrics = st.session_state["ui_metrics"]
+    st.sidebar.subheader("Runtime Metrics")
+    st.sidebar.caption("Session-level operational counters for local MVP monitoring.")
+    st.sidebar.metric("Videos Processed", metrics["videos_processed"])
+    st.sidebar.metric("Questions Asked", metrics["questions_asked"])
+    st.sidebar.metric("Answers Returned", metrics["answers_returned"])
+    st.sidebar.metric("Unsupported / Empty", metrics["no_context_answers"])
+    st.sidebar.metric("Processing Errors", metrics["processing_errors"])
+    st.sidebar.metric("QA Errors", metrics["qa_errors"])
+    st.sidebar.divider()
 
 
 def _model_to_dict(model: object) -> dict:

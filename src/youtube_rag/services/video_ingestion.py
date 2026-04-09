@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Protocol
 
 from youtube_rag.models.video import (
@@ -44,6 +46,50 @@ class InMemoryVideoRegistry:
 
     def mark_processed(self, video_id: str) -> None:
         self._video_ids.add(video_id)
+
+
+class FileBackedVideoRegistry:
+    """Persist processed video ids so duplicate checks survive app restarts."""
+
+    def __init__(self, storage_path: str | Path) -> None:
+        self._storage_path = Path(storage_path)
+        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+        self._video_ids = self._load_video_ids()
+
+    def exists(self, video_id: str) -> bool:
+        return video_id in self._video_ids
+
+    def mark_processed(self, video_id: str) -> None:
+        if video_id in self._video_ids:
+            return
+
+        self._video_ids.add(video_id)
+        self._storage_path.write_text(
+            json.dumps(sorted(self._video_ids), indent=2),
+            encoding="utf-8",
+        )
+
+    def _load_video_ids(self) -> set[str]:
+        if not self._storage_path.exists():
+            return set()
+
+        try:
+            payload = json.loads(self._storage_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning(
+                "Could not load duplicate video registry, starting fresh",
+                extra={"storage_path": str(self._storage_path)},
+            )
+            return set()
+
+        if not isinstance(payload, list):
+            logger.warning(
+                "Unexpected duplicate video registry format, starting fresh",
+                extra={"storage_path": str(self._storage_path)},
+            )
+            return set()
+
+        return {str(item) for item in payload if str(item).strip()}
 
 
 class StaticAvailabilityChecker:

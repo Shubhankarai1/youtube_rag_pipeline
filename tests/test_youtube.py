@@ -1,11 +1,14 @@
 """Tests for YouTube URL parsing and intake validation."""
 
+from pathlib import Path
+
 from youtube_rag.models.video import (
     VideoAvailabilityStatus,
     VideoIntakeRequest,
     VideoProcessingStatus,
 )
 from youtube_rag.services.video_ingestion import (
+    FileBackedVideoRegistry,
     InMemoryVideoRegistry,
     StaticAvailabilityChecker,
     VideoIngestionService,
@@ -98,3 +101,14 @@ def test_valid_video_is_accepted_and_marked_processed() -> None:
     assert response.status == VideoProcessingStatus.READY
     assert response.payload is not None
     assert repository.exists("dQw4w9WgXcQ") is True
+
+
+def test_file_backed_registry_persists_processed_video_ids(tmp_path: Path) -> None:
+    storage_path = tmp_path / "processed_videos.json"
+    first_registry = FileBackedVideoRegistry(storage_path)
+
+    first_registry.mark_processed("dQw4w9WgXcQ")
+
+    second_registry = FileBackedVideoRegistry(storage_path)
+
+    assert second_registry.exists("dQw4w9WgXcQ") is True

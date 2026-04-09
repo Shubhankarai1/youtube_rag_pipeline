@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from youtube_rag.models.chunk import RetrievedChunk
 from youtube_rag.models.qa import QARequest, QAStatus
-from youtube_rag.services.qa_service import QAService
+from youtube_rag.services.qa_service import QAService, _build_context
 
 
 class FakeRetrievalService:
@@ -84,3 +84,29 @@ def test_answer_question_returns_no_context_when_generator_returns_blank() -> No
     assert response.success is False
     assert response.status == QAStatus.NO_CONTEXT
     assert response.sources == retrieved_chunks
+
+
+def test_build_context_truncates_to_max_context_chars() -> None:
+    chunks = [
+        RetrievedChunk(
+            chunk_id="vid123_0001",
+            video_id="vid123",
+            text="A" * 40,
+            start_time=0.0,
+            end_time=5.0,
+            similarity_score=0.95,
+        ),
+        RetrievedChunk(
+            chunk_id="vid123_0002",
+            video_id="vid123",
+            text="B" * 40,
+            start_time=5.0,
+            end_time=10.0,
+            similarity_score=0.94,
+        ),
+    ]
+
+    context = _build_context(chunks, max_context_chars=70)
+
+    assert len(context) <= 70
+    assert "vid123_0001" in context

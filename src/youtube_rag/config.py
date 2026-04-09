@@ -23,6 +23,9 @@ class AppConfig(BaseModel):
     top_k_results: int = 5
     similarity_threshold: float = 0.3
     chunk_max_tokens: int = 500
+    max_question_chars: int = 500
+    min_question_interval_seconds: float = 2.0
+    max_context_chars: int = 6000
 
 
 # ✅ Keep this simple and independent of cached config
@@ -66,4 +69,7 @@ def get_config() -> AppConfig:
         top_k_results=int(os.getenv("TOP_K_RESULTS", "5")),
         similarity_threshold=float(os.getenv("SIMILARITY_THRESHOLD", "0.3")),
         chunk_max_tokens=int(os.getenv("CHUNK_MAX_TOKENS", "500")),
+        max_question_chars=int(os.getenv("MAX_QUESTION_CHARS", "500")),
+        min_question_interval_seconds=float(os.getenv("MIN_QUESTION_INTERVAL_SECONDS", "2.0")),
+        max_context_chars=int(os.getenv("MAX_CONTEXT_CHARS", "6000")),
     )

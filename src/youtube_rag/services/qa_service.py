@@ -25,12 +25,13 @@ class AnswerGenerator(Protocol):
 class OpenAIAnswerGenerator:
     """OpenAI-backed grounded answer generation."""
 
-    def __init__(self, api_key: str, model: str) -> None:
+    def __init__(self, api_key: str, model: str, *, max_context_chars: int = 6000) -> None:
         self._client = OpenAI(api_key=api_key)
         self._model = model
+        self._max_context_chars = max_context_chars
 
     def generate_answer(self, question: str, chunks: list[RetrievedChunk]) -> str:
-        context = _build_context(chunks)
+        context = _build_context(chunks, max_context_chars=self._max_context_chars)
         response = self._client.chat.completions.create(
             model=self._model,
             messages=[
@@ -128,8 +129,21 @@ class NullQAService:
         )
 
 
-def _build_context(chunks: list[RetrievedChunk]) -> str:
-    return "\n\n".join(
-        f"[{chunk.chunk_id} | {chunk.start_time:.2f}-{chunk.end_time:.2f}] {chunk.text}"
-        for chunk in chunks
-    )
+def _build_context(chunks: list[RetrievedChunk], *, max_context_chars: int = 6000) -> str:
+    context_parts: list[str] = []
+    current_length = 0
+
+    for chunk in chunks:
+        chunk_text = f"[{chunk.chunk_id} | {chunk.start_time:.2f}-{chunk.end_time:.2f}] {chunk.text}"
+        separator = "\n\n" if context_parts else ""
+        projected_length = current_length + len(separator) + len(chunk_text)
+        if context_parts and projected_length > max_context_chars:
+            break
+        if not context_parts and len(chunk_text) > max_context_chars:
+            context_parts.append(chunk_text[:max_context_chars])
+            break
+
+        context_parts.append(chunk_text)
+        current_length = projected_length
+
+    return "\n\n".join(context_parts)

@@ -22,7 +22,7 @@ class QARequest(BaseModel):
     """Question request against a processed video."""
 
     video_id: str = Field(min_length=1)
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=500)
 
 
 class QAResponse(BaseModel):

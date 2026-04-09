@@ -1,50 +1,95 @@
 # youtube_rag_pipeline
 
-Build an end-to-end Retrieval-Augmented Generation (RAG) system that allows users to input a YouTube video URL and ask questions based on its content. The system should retrieve relevant transcript chunks and generate accurate answers, or detect and respond when a query is irrelevant.
+Build an end-to-end Retrieval-Augmented Generation (RAG) system that allows users to input a YouTube video URL and ask questions based on its content. The system retrieves relevant transcript chunks, generates grounded answers from those chunks, and refuses unsupported questions when retrieval does not meet the configured relevance bar.
 
-## Phase 1-5 status
+## Phase 1-6 status
 
-The current repo implements the foundation plus transcript chunking:
+The current repo now covers the MVP foundation through release-readiness basics:
 
 - environment-backed config loading
-- logging setup
-- Streamlit intake page with a `Process Video` action
-- YouTube URL validation and `video_id` extraction
-- duplicate detection and deterministic availability checks
-- normalized intake payload returned for the transcript layer
+- persistent duplicate detection for processed YouTube videos
+- Streamlit intake page with processing status and retrieved-context inspection
 - transcript extraction and normalization with `youtube-transcript-api`
-- sentence-aware chunking with `nltk.sent_tokenize`
+- sentence-aware chunking with NLTK
 - BERT-token-limited chunks using a HuggingFace tokenizer
-- chunk metadata with `chunk_id`, `start_time`, `end_time`, and `token_count`
 - OpenAI embedding generation for chunks
 - PostgreSQL + pgvector persistence for chunk embeddings
-- vector retrieval service for top-k semantic search
-- retrieval-gated question answering from transcript context only
+- top-k semantic retrieval with enforced similarity thresholding
+- grounded answer generation from transcript context only
+- basic session-level runtime metrics in the sidebar
+- question-length and request-interval safeguards for local MVP usage
 
 ## Run locally
 
-1. Create a virtual environment and install `requirements.txt`.
-2. Copy `.env.example` to `.env` and provide at least `OPENAI_API_KEY` and `DATABASE_URL`.
-3. Run `streamlit run streamlit_app.py`.
-4. Run `python3 -m pytest -q` to verify the tests.
+1. Create a virtual environment.
+2. Install dependencies:
 
-## Phase 3 behavior
+```powershell
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
-- Transcript text is split into sentences with NLTK.
-- Each sentence is mapped to timestamps within its source transcript segment.
-- Sentences are added to chunks in order until the chunk reaches the configured BERT token limit.
-- Sentences are never split across chunks.
+3. Copy `.env.example` to `.env`.
+4. Provide at least:
+   - `OPENAI_API_KEY`
+   - `DATABASE_URL`
+5. Run the app:
 
-## Phase 4 behavior
+```powershell
+.\venv\Scripts\python.exe -m streamlit run streamlit_app.py
+```
 
-- Chunks are embedded with the configured OpenAI embedding model.
-- The app initializes the `video_chunks` schema in PostgreSQL if needed.
-- Processed chunks are stored once per video and skipped on repeat submissions.
-- A retrieval service is available to embed user queries and run vector similarity search.
+6. Run tests:
 
-## Phase 5 behavior
+```powershell
+.\venv\Scripts\python.exe -m pytest -q
+```
 
-- After a video is processed, the app keeps the `video_id` in session state.
-- User questions are embedded and matched against stored chunks for that video.
-- If retrieval does not produce support above the configured threshold, the question is rejected as unsupported.
-- If relevant chunks are found, the chat model answers only from those chunks and the UI shows the retrieved source passages.
+## Important environment settings
+
+- `TOP_K_RESULTS`: number of retrieved chunks considered for answers
+- `SIMILARITY_THRESHOLD`: minimum similarity required before chunks are eligible
+- `CHUNK_MAX_TOKENS`: maximum chunk size for sentence-aware chunking
+- `MAX_QUESTION_CHARS`: question-length guardrail in the UI and request model
+- `MIN_QUESTION_INTERVAL_SECONDS`: local request pacing safeguard
+- `MAX_CONTEXT_CHARS`: maximum context size forwarded into answer generation
+
+## Operational behavior
+
+- Duplicate video submissions are persisted in `data/processed_videos.json`.
+- The app initializes the `video_chunks` schema automatically when embeddings are first stored.
+- The sidebar exposes session-level counters for:
+  - videos processed
+  - questions asked
+  - grounded answers returned
+  - unsupported or empty-answer outcomes
+  - processing errors
+  - QA errors
+
+## MVP limitations
+
+- Duplicate tracking is persistent locally but not yet multi-user aware.
+- Rate limiting is session-based and intended as an MVP safeguard, not a production abuse-prevention layer.
+- Observability is still log-driven; there is no external metrics backend yet.
+- Deployment is still simplest as a single Streamlit app backed by PostgreSQL.
+
+## Deployment notes
+
+Recommended MVP deployment targets:
+
+- Streamlit Community Cloud for a quick demo, if database connectivity is available
+- Render or Railway for a more controllable hosted setup
+
+Minimum production-facing setup:
+
+- hosted PostgreSQL with `pgvector`
+- environment variables configured in the deployment platform
+- outbound access for OpenAI and transcript retrieval
+- log capture from the Streamlit runtime
+
+## Verification
+
+The project test suite should pass with:
+
+```powershell
+.\venv\Scripts\python.exe -m pytest -q
+```

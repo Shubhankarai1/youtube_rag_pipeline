@@ -25,7 +25,7 @@ from youtube_rag.services.embedding_service import EmbeddingService, NullEmbeddi
 from youtube_rag.services.qa_service import NullQAService, OpenAIAnswerGenerator, QAService
 from youtube_rag.services.retrieval_service import RetrievalService
 from youtube_rag.services.video_ingestion import (
-    InMemoryVideoRegistry,
+    FileBackedVideoRegistry,
     StaticAvailabilityChecker,
     VideoIngestionService,
 )
@@ -49,7 +49,7 @@ def main() -> None:
 
     # Initialize ingestion service
     ingestion_service = VideoIngestionService(
-        duplicate_repository=InMemoryVideoRegistry(),
+        duplicate_repository=FileBackedVideoRegistry(PROJECT_ROOT / "data" / "processed_videos.json"),
         availability_checker=StaticAvailabilityChecker(),
     )
     transcript_service = TranscriptService()
@@ -76,6 +76,7 @@ def main() -> None:
             answer_generator=OpenAIAnswerGenerator(
                 api_key=config.openai_api_key,
                 model=config.openai_chat_model,
+                max_context_chars=config.max_context_chars,
             ),
         )
     else:
@@ -89,6 +90,8 @@ def main() -> None:
         chunking_service,
         embedding_service,
         qa_service,
+        max_question_chars=config.max_question_chars if config else 500,
+        min_question_interval_seconds=config.min_question_interval_seconds if config else 2.0,
         missing_settings=missing_settings,
     )
 

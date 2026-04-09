@@ -80,14 +80,17 @@ class PgVectorChunkRepository:
         similarity_threshold: float,
         video_id: str | None = None,
     ) -> list[RetrievedChunk]:
-        where_clause = ""
         vector_literal = _embedding_to_vector_literal(query_embedding)
-        parameters: tuple[object, ...]
+        parameters: list[object] = [vector_literal]
+        where_conditions = ["1 - (embedding <=> %s::vector) >= %s"]
+        parameters.extend([vector_literal, similarity_threshold])
+
         if video_id:
-            where_clause = "WHERE video_id = %s"
-            parameters = (vector_literal, video_id, vector_literal, top_k)
-        else:
-            parameters = (vector_literal, vector_literal, top_k)
+            where_conditions.append("video_id = %s")
+            parameters.append(video_id)
+
+        parameters.extend([vector_literal, top_k])
+        where_clause = "WHERE " + " AND ".join(where_conditions)
 
         with self._get_connection() as connection:
             rows = connection.execute(
@@ -104,7 +107,7 @@ class PgVectorChunkRepository:
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s
                 """,
-                parameters,
+                tuple(parameters),
             ).fetchall()
 
         return [
