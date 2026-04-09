@@ -195,6 +195,7 @@ class PgVectorChunkRepository:
         top_k: int,
         similarity_threshold: float,
         video_id: str | None = None,
+        source_ids: list[str] | None = None,
     ) -> list[RetrievedChunk]:
         vector_literal = _embedding_to_vector_literal(query_embedding)
         parameters: list[object] = [vector_literal]
@@ -204,6 +205,10 @@ class PgVectorChunkRepository:
         if video_id:
             where_conditions.append("video_id = %s")
             parameters.append(video_id)
+        if source_ids:
+            placeholders = ", ".join(["%s"] * len(source_ids))
+            where_conditions.append(f"video_chunks.source_id IN ({placeholders})")
+            parameters.extend(source_ids)
 
         parameters.extend([vector_literal, top_k])
         where_clause = "WHERE " + " AND ".join(where_conditions)

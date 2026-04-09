@@ -67,6 +67,7 @@ class QAService:
             retrieved_chunks = self._retrieval_service.retrieve(
                 request.question,
                 video_id=request.video_id,
+                source_ids=request.selected_source_ids or None,
             )
         except Exception as exc:  # pragma: no cover - integration/runtime path
             return QAResponse(
@@ -79,6 +80,7 @@ class QAService:
             "Question retrieval completed",
             extra={
                 "video_id": request.video_id,
+                "source_ids": request.selected_source_ids,
                 "retrieved_chunk_count": len(retrieved_chunks),
                 "similarity_scores": [chunk.similarity_score for chunk in retrieved_chunks],
             },

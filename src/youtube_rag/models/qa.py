@@ -19,9 +19,10 @@ class QAStatus(str, Enum):
 
 
 class QARequest(BaseModel):
-    """Question request against a processed video."""
+    """Question request against all content or a selected source scope."""
 
-    video_id: str = Field(min_length=1)
+    video_id: str | None = None
+    selected_source_ids: list[str] = Field(default_factory=list)
     question: str = Field(min_length=1, max_length=500)
 
 

@@ -10,10 +10,16 @@ from youtube_rag.services.qa_service import QAService, _build_context
 class FakeRetrievalService:
     def __init__(self, results: list[RetrievedChunk]) -> None:
         self._results = results
-        self.calls: list[dict[str, str | None]] = []
+        self.calls: list[dict[str, object]] = []
 
-    def retrieve(self, query: str, *, video_id: str | None = None) -> list[RetrievedChunk]:
-        self.calls.append({"query": query, "video_id": video_id})
+    def retrieve(
+        self,
+        query: str,
+        *,
+        video_id: str | None = None,
+        source_ids: list[str] | None = None,
+    ) -> list[RetrievedChunk]:
+        self.calls.append({"query": query, "video_id": video_id, "source_ids": source_ids})
         return self._results
 
 
@@ -48,6 +54,13 @@ def test_answer_question_returns_grounded_answer_when_context_exists() -> None:
     assert response.status == QAStatus.ANSWERED
     assert response.answer == "The video explains transformers."
     assert response.sources == retrieved_chunks
+    assert retrieval_service.calls == [
+        {
+            "query": "What does the video explain?",
+            "video_id": "vid123",
+            "source_ids": None,
+        }
+    ]
 
 
 def test_answer_question_returns_no_context_when_no_chunks_are_retrieved() -> None:
@@ -110,3 +123,41 @@ def test_build_context_truncates_to_max_context_chars() -> None:
 
     assert len(context) <= 70
     assert "vid123_0001" in context
+
+
+def test_answer_question_supports_selected_source_scope() -> None:
+    retrieval_service = FakeRetrievalService(
+        [
+            RetrievedChunk(
+                chunk_id="vid123_0001",
+                video_id="vid123",
+                source_id="youtube:vid123",
+                source_type="youtube",
+                source_title="YouTube Video vid123",
+                text="The video explains agentic retrieval.",
+                start_time=0.0,
+                end_time=5.0,
+                similarity_score=0.93,
+            )
+        ]
+    )
+    service = QAService(
+        retrieval_service=retrieval_service,
+        answer_generator=FakeAnswerGenerator("The video explains agentic retrieval."),
+    )
+
+    response = service.answer_question(
+        QARequest(
+            question="What does this source explain?",
+            selected_source_ids=["youtube:vid123"],
+        )
+    )
+
+    assert response.success is True
+    assert retrieval_service.calls == [
+        {
+            "query": "What does this source explain?",
+            "video_id": None,
+            "source_ids": ["youtube:vid123"],
+        }
+    ]

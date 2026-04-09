@@ -59,6 +59,33 @@ def test_retrieve_similar_chunks_applies_similarity_threshold_and_video_filter()
     assert parameters == ("[0.1,0.2]", "[0.1,0.2]", 0.75, "vid123", "[0.1,0.2]", 5)
 
 
+def test_retrieve_similar_chunks_supports_source_id_filters() -> None:
+    connection = FakeConnection()
+    repository = FakePgVectorChunkRepository(connection)
+
+    repository.retrieve_similar_chunks(
+        [0.1, 0.2],
+        top_k=3,
+        similarity_threshold=0.7,
+        source_ids=["youtube:vid123", "youtube:vid456"],
+    )
+
+    assert len(connection.calls) == 1
+    query = connection.calls[0]["query"]
+    parameters = connection.calls[0]["parameters"]
+
+    assert "video_chunks.source_id IN (%s, %s)" in query
+    assert parameters == (
+        "[0.1,0.2]",
+        "[0.1,0.2]",
+        0.7,
+        "youtube:vid123",
+        "youtube:vid456",
+        "[0.1,0.2]",
+        3,
+    )
+
+
 def test_start_processing_persists_processing_source_registry_entry() -> None:
     connection = FakeConnection()
     repository = FakePgVectorChunkRepository(connection)

@@ -28,6 +28,7 @@ class ChunkRetriever(Protocol):
         top_k: int,
         similarity_threshold: float,
         video_id: str | None = None,
+        source_ids: list[str] | None = None,
     ) -> list[RetrievedChunk]:
         """Return the most similar stored chunks."""
 
@@ -48,12 +49,19 @@ class RetrievalService:
         self._top_k = top_k
         self._similarity_threshold = similarity_threshold
 
-    def retrieve(self, query: str, *, video_id: str | None = None) -> list[RetrievedChunk]:
+    def retrieve(
+        self,
+        query: str,
+        *,
+        video_id: str | None = None,
+        source_ids: list[str] | None = None,
+    ) -> list[RetrievedChunk]:
         query_embedding = self._embedding_client.embed_texts([query])[0]
         logger.info(
             "Query embedding generated",
             extra={
                 "video_id": video_id,
+                "source_ids": source_ids or [],
                 "query_length": len(query),
                 "embedding_dimensions": len(query_embedding),
             },
@@ -63,11 +71,13 @@ class RetrievalService:
             top_k=self._top_k,
             similarity_threshold=self._similarity_threshold,
             video_id=video_id,
+            source_ids=source_ids,
         )
         logger.info(
             "Retrieved chunks for question",
             extra={
                 "video_id": video_id,
+                "source_ids": source_ids or [],
                 "retrieved_chunk_count": len(retrieved_chunks),
                 "similarity_scores": [chunk.similarity_score for chunk in retrieved_chunks],
             },

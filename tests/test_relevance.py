@@ -19,6 +19,7 @@ class ThresholdAwareRetriever:
         top_k: int,
         similarity_threshold: float,
         video_id: str | None = None,
+        source_ids: list[str] | None = None,
     ) -> list[RetrievedChunk]:
         if similarity_threshold >= 0.95:
             return []
