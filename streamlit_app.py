@@ -47,17 +47,16 @@ def main() -> None:
         assert config is not None
         configure_logging(config.log_level)
 
-    # Initialize ingestion service
-    ingestion_service = VideoIngestionService(
-        duplicate_repository=FileBackedVideoRegistry(PROJECT_ROOT / "data" / "processed_videos.json"),
-        availability_checker=StaticAvailabilityChecker(),
-    )
     transcript_service = TranscriptService()
     chunking_service = ChunkingService(
         max_chunk_tokens=config.chunk_max_tokens if config else 500,
     )
     if config is not None:
         repository = PgVectorChunkRepository(config.database_url)
+        ingestion_service = VideoIngestionService(
+            source_repository=repository,
+            availability_checker=StaticAvailabilityChecker(),
+        )
         embedding_client = OpenAIEmbeddingClient(
             api_key=config.openai_api_key,
             model=config.openai_embedding_model,
@@ -80,6 +79,10 @@ def main() -> None:
             ),
         )
     else:
+        ingestion_service = VideoIngestionService(
+            source_repository=FileBackedVideoRegistry(PROJECT_ROOT / "data" / "processed_videos.json"),
+            availability_checker=StaticAvailabilityChecker(),
+        )
         embedding_service = NullEmbeddingService()
         qa_service = NullQAService()
 

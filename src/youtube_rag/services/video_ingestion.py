@@ -1,8 +1,7 @@
-"""Video URL validation, metadata extraction, and deduplication checks."""
+"""Video URL validation, metadata extraction, and idempotent source intake."""
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Protocol
@@ -13,19 +12,26 @@ from youtube_rag.models.video import (
     VideoIntakeResponse,
     VideoProcessingStatus,
 )
+from youtube_rag.models.source import SourceProcessingStatus
 from youtube_rag.utils.youtube import build_intake_payload
 
 logger = logging.getLogger(__name__)
 
 
-class DuplicateVideoRepository(Protocol):
-    """Storage contract for duplicate detection during intake."""
+class VideoSourceRepository(Protocol):
+    """Storage contract for durable, source-aware intake state."""
 
-    def exists(self, video_id: str) -> bool:
-        """Return True if the video has already been ingested."""
+    def get_status(self, video_id: str) -> SourceProcessingStatus | None:
+        """Return the current persisted processing state for a video."""
 
-    def mark_processed(self, video_id: str) -> None:
-        """Persist that the video is now in the pipeline."""
+    def start_processing(self, *, video_id: str, source_url: str, normalized_url: str) -> None:
+        """Persist that the video has entered the processing pipeline."""
+
+    def mark_ready(self, video_id: str) -> None:
+        """Persist that the video has been indexed successfully."""
+
+    def mark_failed(self, video_id: str) -> None:
+        """Persist that processing failed and the source is retryable."""
 
 
 class VideoAvailabilityChecker(Protocol):
@@ -36,60 +42,100 @@ class VideoAvailabilityChecker(Protocol):
 
 
 class InMemoryVideoRegistry:
-    """Simple duplicate registry used for tests and local MVP work."""
+    """In-memory source registry used for tests and local fallback flows."""
 
     def __init__(self, existing_video_ids: set[str] | None = None) -> None:
-        self._video_ids = set(existing_video_ids or set())
+        self._statuses = {
+            video_id: SourceProcessingStatus.READY for video_id in (existing_video_ids or set())
+        }
+
+    def get_status(self, video_id: str) -> SourceProcessingStatus | None:
+        return self._statuses.get(video_id)
+
+    def start_processing(self, *, video_id: str, source_url: str, normalized_url: str) -> None:
+        self._statuses[video_id] = SourceProcessingStatus.PROCESSING
+
+    def mark_ready(self, video_id: str) -> None:
+        self._statuses[video_id] = SourceProcessingStatus.READY
+
+    def mark_failed(self, video_id: str) -> None:
+        self._statuses[video_id] = SourceProcessingStatus.FAILED
 
     def exists(self, video_id: str) -> bool:
-        return video_id in self._video_ids
-
-    def mark_processed(self, video_id: str) -> None:
-        self._video_ids.add(video_id)
+        return self.get_status(video_id) == SourceProcessingStatus.READY
 
 
 class FileBackedVideoRegistry:
-    """Persist processed video ids so duplicate checks survive app restarts."""
+    """Persist per-video processing state for local MVP work."""
 
     def __init__(self, storage_path: str | Path) -> None:
         self._storage_path = Path(storage_path)
         self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self._video_ids = self._load_video_ids()
+        self._statuses = self._load_statuses()
+
+    def get_status(self, video_id: str) -> SourceProcessingStatus | None:
+        return self._statuses.get(video_id)
+
+    def start_processing(self, *, video_id: str, source_url: str, normalized_url: str) -> None:
+        self._statuses[video_id] = SourceProcessingStatus.PROCESSING
+        self._persist()
+
+    def mark_ready(self, video_id: str) -> None:
+        self._statuses[video_id] = SourceProcessingStatus.READY
+        self._persist()
+
+    def mark_failed(self, video_id: str) -> None:
+        self._statuses[video_id] = SourceProcessingStatus.FAILED
+        self._persist()
 
     def exists(self, video_id: str) -> bool:
-        return video_id in self._video_ids
+        return self.get_status(video_id) == SourceProcessingStatus.READY
 
-    def mark_processed(self, video_id: str) -> None:
-        if video_id in self._video_ids:
-            return
-
-        self._video_ids.add(video_id)
-        self._storage_path.write_text(
-            json.dumps(sorted(self._video_ids), indent=2),
-            encoding="utf-8",
-        )
-
-    def _load_video_ids(self) -> set[str]:
+    def _load_statuses(self) -> dict[str, SourceProcessingStatus]:
         if not self._storage_path.exists():
-            return set()
+            return {}
 
         try:
+            import json
+
             payload = json.loads(self._storage_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             logger.warning(
                 "Could not load duplicate video registry, starting fresh",
                 extra={"storage_path": str(self._storage_path)},
             )
-            return set()
+            return {}
 
-        if not isinstance(payload, list):
+        if isinstance(payload, list):
+            return {
+                str(video_id): SourceProcessingStatus.READY
+                for video_id in payload
+                if str(video_id).strip()
+            }
+
+        if not isinstance(payload, dict):
             logger.warning(
                 "Unexpected duplicate video registry format, starting fresh",
                 extra={"storage_path": str(self._storage_path)},
             )
-            return set()
+            return {}
 
-        return {str(item) for item in payload if str(item).strip()}
+        loaded_statuses: dict[str, SourceProcessingStatus] = {}
+        for video_id, raw_status in payload.items():
+            try:
+                loaded_statuses[str(video_id)] = SourceProcessingStatus(str(raw_status))
+            except ValueError:
+                continue
+
+        return loaded_statuses
+
+    def _persist(self) -> None:
+        import json
+
+        self._storage_path.write_text(
+            json.dumps({video_id: status.value for video_id, status in sorted(self._statuses.items())}, indent=2),
+            encoding="utf-8",
+        )
 
 
 class StaticAvailabilityChecker:
@@ -110,14 +156,14 @@ class StaticAvailabilityChecker:
 
 
 class VideoIngestionService:
-    """Phase 1 video intake orchestration."""
+    """Phase 8 source-aware video intake orchestration."""
 
     def __init__(
         self,
-        duplicate_repository: DuplicateVideoRepository,
+        source_repository: VideoSourceRepository,
         availability_checker: VideoAvailabilityChecker,
     ) -> None:
-        self._duplicate_repository = duplicate_repository
+        self._source_repository = source_repository
         self._availability_checker = availability_checker
 
     def intake(self, request: VideoIntakeRequest) -> VideoIntakeResponse:
@@ -134,12 +180,23 @@ class VideoIngestionService:
                 availability_status=VideoAvailabilityStatus.UNKNOWN,
             )
 
-        if self._duplicate_repository.exists(payload.video_id):
+        current_status = self._source_repository.get_status(payload.video_id)
+        if current_status == SourceProcessingStatus.READY:
             logger.info("Rejected duplicate video submission", extra={"video_id": payload.video_id})
             return VideoIntakeResponse(
                 accepted=False,
                 status=VideoProcessingStatus.DUPLICATE,
-                message="This video has already been submitted for processing.",
+                message="This video has already been indexed and is ready for questions.",
+                availability_status=VideoAvailabilityStatus.AVAILABLE,
+                is_duplicate=True,
+                payload=payload,
+            )
+        if current_status == SourceProcessingStatus.PROCESSING:
+            logger.info("Rejected in-flight video submission", extra={"video_id": payload.video_id})
+            return VideoIntakeResponse(
+                accepted=False,
+                status=VideoProcessingStatus.DUPLICATE,
+                message="This video is already being processed. Please wait for indexing to finish.",
                 availability_status=VideoAvailabilityStatus.AVAILABLE,
                 is_duplicate=True,
                 payload=payload,
@@ -156,12 +213,29 @@ class VideoIngestionService:
                 payload=payload,
             )
 
-        self._duplicate_repository.mark_processed(payload.video_id)
-        logger.info("Accepted video for downstream transcript processing", extra={"video_id": payload.video_id})
+        self._source_repository.start_processing(
+            video_id=payload.video_id,
+            source_url=payload.source_url,
+            normalized_url=payload.normalized_url,
+        )
+        logger.info(
+            "Accepted video for downstream transcript processing",
+            extra={"video_id": payload.video_id, "retry": current_status == SourceProcessingStatus.FAILED},
+        )
         return VideoIntakeResponse(
             accepted=True,
             status=VideoProcessingStatus.READY,
-            message="Video intake complete. Ready for transcript extraction.",
+            message=(
+                "Retrying previously failed video processing."
+                if current_status == SourceProcessingStatus.FAILED
+                else "Video intake complete. Ready for transcript extraction."
+            ),
             availability_status=availability_status,
             payload=payload,
         )
+
+    def mark_ready(self, video_id: str) -> None:
+        self._source_repository.mark_ready(video_id)
+
+    def mark_failed(self, video_id: str) -> None:
+        self._source_repository.mark_failed(video_id)

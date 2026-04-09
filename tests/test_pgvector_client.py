@@ -59,13 +59,16 @@ def test_retrieve_similar_chunks_applies_similarity_threshold_and_video_filter()
     assert parameters == ("[0.1,0.2]", "[0.1,0.2]", 0.75, "vid123", "[0.1,0.2]", 5)
 
 
-def test_register_youtube_source_persists_source_registry_entry() -> None:
+def test_start_processing_persists_processing_source_registry_entry() -> None:
     connection = FakeConnection()
     repository = FakePgVectorChunkRepository(connection)
 
-    source = repository.register_youtube_source("vid123")
+    repository.start_processing(
+        video_id="vid123",
+        source_url="https://youtu.be/vid123",
+        normalized_url="https://www.youtube.com/watch?v=vid123",
+    )
 
-    assert source.source_id == "youtube:vid123"
     assert len(connection.calls) == 1
     assert "INSERT INTO sources" in connection.calls[0]["query"]
     assert connection.calls[0]["parameters"] == (
@@ -73,8 +76,8 @@ def test_register_youtube_source_persists_source_registry_entry() -> None:
         "youtube",
         "vid123",
         "YouTube Video vid123",
-        "ready",
-        "https://www.youtube.com/watch?v=vid123",
+        "processing",
+        "https://youtu.be/vid123",
         "https://www.youtube.com/watch?v=vid123",
     )
     assert connection.commit_calls == 1

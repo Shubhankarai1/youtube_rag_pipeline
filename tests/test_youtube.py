@@ -7,6 +7,7 @@ from youtube_rag.models.video import (
     VideoIntakeRequest,
     VideoProcessingStatus,
 )
+from youtube_rag.models.source import SourceProcessingStatus
 from youtube_rag.services.video_ingestion import (
     FileBackedVideoRegistry,
     InMemoryVideoRegistry,
@@ -57,7 +58,7 @@ def test_build_intake_payload_normalizes_watch_url() -> None:
 def test_duplicate_video_detection_logic() -> None:
     duplicate_repository = InMemoryVideoRegistry({"dQw4w9WgXcQ"})
     service = VideoIngestionService(
-        duplicate_repository=duplicate_repository,
+        source_repository=duplicate_repository,
         availability_checker=StaticAvailabilityChecker(),
     )
 
@@ -68,12 +69,13 @@ def test_duplicate_video_detection_logic() -> None:
     assert response.accepted is False
     assert response.status == VideoProcessingStatus.DUPLICATE
     assert response.is_duplicate is True
+    assert response.message == "This video has already been indexed and is ready for questions."
 
 
 def test_unavailable_video_is_rejected() -> None:
     unavailable_video_id = "dQw4w9WgXcQ"
     service = VideoIngestionService(
-        duplicate_repository=InMemoryVideoRegistry(),
+        source_repository=InMemoryVideoRegistry(),
         availability_checker=StaticAvailabilityChecker({unavailable_video_id}),
     )
 
@@ -89,7 +91,7 @@ def test_unavailable_video_is_rejected() -> None:
 def test_valid_video_is_accepted_and_marked_processed() -> None:
     repository = InMemoryVideoRegistry()
     service = VideoIngestionService(
-        duplicate_repository=repository,
+        source_repository=repository,
         availability_checker=StaticAvailabilityChecker(),
     )
 
@@ -100,15 +102,38 @@ def test_valid_video_is_accepted_and_marked_processed() -> None:
     assert response.accepted is True
     assert response.status == VideoProcessingStatus.READY
     assert response.payload is not None
-    assert repository.exists("dQw4w9WgXcQ") is True
+    assert repository.get_status("dQw4w9WgXcQ") == SourceProcessingStatus.PROCESSING
 
 
 def test_file_backed_registry_persists_processed_video_ids(tmp_path: Path) -> None:
     storage_path = tmp_path / "processed_videos.json"
     first_registry = FileBackedVideoRegistry(storage_path)
 
-    first_registry.mark_processed("dQw4w9WgXcQ")
+    first_registry.start_processing(
+        video_id="dQw4w9WgXcQ",
+        source_url="https://youtu.be/dQw4w9WgXcQ",
+        normalized_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    )
+    first_registry.mark_ready("dQw4w9WgXcQ")
 
     second_registry = FileBackedVideoRegistry(storage_path)
 
-    assert second_registry.exists("dQw4w9WgXcQ") is True
+    assert second_registry.get_status("dQw4w9WgXcQ") == SourceProcessingStatus.READY
+
+
+def test_failed_video_is_retryable() -> None:
+    repository = InMemoryVideoRegistry()
+    repository.mark_failed("dQw4w9WgXcQ")
+    service = VideoIngestionService(
+        source_repository=repository,
+        availability_checker=StaticAvailabilityChecker(),
+    )
+
+    response = service.intake(
+        VideoIntakeRequest(youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    )
+
+    assert response.accepted is True
+    assert response.status == VideoProcessingStatus.READY
+    assert response.message == "Retrying previously failed video processing."
+    assert repository.get_status("dQw4w9WgXcQ") == SourceProcessingStatus.PROCESSING

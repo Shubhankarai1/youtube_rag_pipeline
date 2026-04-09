@@ -63,6 +63,7 @@ def render_video_intake_page(
                     try:
                         chunks = chunking_service.chunk_transcript(transcript_response.payload)
                     except ChunkingError as exc:
+                        ingestion_service.mark_failed(response.payload.video_id)
                         _record_metric("processing_errors")
                         status.update(label="Chunking failed", state="error")
                         st.success(f"{response.message} {transcript_response.message}")
@@ -76,6 +77,7 @@ def render_video_intake_page(
                         try:
                             embedded_chunks = embedding_service.persist_video_chunks(chunks)
                         except EmbeddingStorageError as exc:
+                            ingestion_service.mark_failed(response.payload.video_id)
                             _record_metric("processing_errors")
                             status.update(label="Embedding or storage failed", state="error")
                             st.success(f"{response.message} {transcript_response.message} Chunking complete.")
@@ -83,6 +85,7 @@ def render_video_intake_page(
                             st.subheader("Chunk Preview")
                             st.json([_chunk_to_preview(chunk) for chunk in chunks[:3]])
                         else:
+                            ingestion_service.mark_ready(response.payload.video_id)
                             _record_metric("videos_processed")
                             status.update(label="Transcript chunking and storage complete", state="complete")
                             st.success(f"{response.message} {transcript_response.message} Chunking complete.")
@@ -105,6 +108,7 @@ def render_video_intake_page(
                             st.json([_chunk_to_preview(chunk) for chunk in chunks[:3]])
                             st.session_state["processed_video_id"] = response.payload.video_id
                 else:
+                    ingestion_service.mark_failed(response.payload.video_id)
                     _record_metric("processing_errors")
                     status.update(label="Transcript extraction failed", state="error")
                     st.success(response.message)

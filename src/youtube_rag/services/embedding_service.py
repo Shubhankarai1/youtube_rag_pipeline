@@ -26,7 +26,7 @@ class ChunkEmbeddingRepository(Protocol):
     def has_video(self, video_id: str) -> bool:
         """Return whether a video's chunks are already stored."""
 
-    def register_youtube_source(self, video_id: str) -> SourceRecord:
+    def ensure_youtube_source(self, video_id: str) -> SourceRecord:
         """Create or fetch the persistent source entry for a YouTube video."""
 
     def store_embeddings(self, embedded_chunks: list[EmbeddedChunk]) -> None:
@@ -72,7 +72,7 @@ class EmbeddingService:
             if self._repository.has_video(video_id):
                 return []
 
-            source = self._repository.register_youtube_source(video_id)
+            source = self._repository.ensure_youtube_source(video_id)
             embeddings = self._embedding_client.embed_texts([chunk.text for chunk in chunks])
             embedded_chunks = [
                 EmbeddedChunk(

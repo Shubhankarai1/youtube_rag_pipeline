@@ -31,7 +31,7 @@ class FakeRepository:
     def has_video(self, video_id: str) -> bool:
         return self._has_video
 
-    def register_youtube_source(self, video_id: str) -> SourceRecord:
+    def ensure_youtube_source(self, video_id: str) -> SourceRecord:
         self.registered_video_ids.append(video_id)
         return SourceRecord(
             source_id=f"youtube:{video_id}",
