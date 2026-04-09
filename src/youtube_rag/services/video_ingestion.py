@@ -33,6 +33,9 @@ class VideoSourceRepository(Protocol):
     def mark_failed(self, video_id: str) -> None:
         """Persist that processing failed and the source is retryable."""
 
+    def list_ready_sources(self) -> list[object]:
+        """Return ready sources available for retrieval."""
+
 
 class VideoAvailabilityChecker(Protocol):
     """Availability contract kept separate from later transcript extraction."""
@@ -64,6 +67,23 @@ class InMemoryVideoRegistry:
     def exists(self, video_id: str) -> bool:
         return self.get_status(video_id) == SourceProcessingStatus.READY
 
+    def list_ready_sources(self) -> list[object]:
+        from youtube_rag.models.source import SourceRecord, SourceType
+
+        return [
+            SourceRecord(
+                source_id=f"youtube:{video_id}",
+                source_type=SourceType.YOUTUBE,
+                external_id=video_id,
+                title=f"YouTube Video {video_id}",
+                processing_status=SourceProcessingStatus.READY,
+                source_url=f"https://www.youtube.com/watch?v={video_id}",
+                normalized_url=f"https://www.youtube.com/watch?v={video_id}",
+            )
+            for video_id, status in sorted(self._statuses.items())
+            if status == SourceProcessingStatus.READY
+        ]
+
 
 class FileBackedVideoRegistry:
     """Persist per-video processing state for local MVP work."""
@@ -90,6 +110,23 @@ class FileBackedVideoRegistry:
 
     def exists(self, video_id: str) -> bool:
         return self.get_status(video_id) == SourceProcessingStatus.READY
+
+    def list_ready_sources(self) -> list[object]:
+        from youtube_rag.models.source import SourceRecord, SourceType
+
+        return [
+            SourceRecord(
+                source_id=f"youtube:{video_id}",
+                source_type=SourceType.YOUTUBE,
+                external_id=video_id,
+                title=f"YouTube Video {video_id}",
+                processing_status=SourceProcessingStatus.READY,
+                source_url=f"https://www.youtube.com/watch?v={video_id}",
+                normalized_url=f"https://www.youtube.com/watch?v={video_id}",
+            )
+            for video_id, status in sorted(self._statuses.items())
+            if status == SourceProcessingStatus.READY
+        ]
 
     def _load_statuses(self) -> dict[str, SourceProcessingStatus]:
         if not self._storage_path.exists():
@@ -239,3 +276,6 @@ class VideoIngestionService:
 
     def mark_failed(self, video_id: str) -> None:
         self._source_repository.mark_failed(video_id)
+
+    def list_ready_sources(self) -> list[object]:
+        return self._source_repository.list_ready_sources()

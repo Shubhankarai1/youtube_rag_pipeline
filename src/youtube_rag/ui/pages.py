@@ -8,6 +8,7 @@ import streamlit as st
 
 from youtube_rag.models.chunk import TranscriptChunk
 from youtube_rag.models.qa import QARequest, QAResponse, QAStatus
+from youtube_rag.models.source import SourceRecord
 from youtube_rag.models.video import VideoIntakeRequest
 from youtube_rag.services.chunking_service import ChunkingError, ChunkingService
 from youtube_rag.services.embedding_service import EmbeddingService, EmbeddingStorageError, NullEmbeddingService
@@ -27,7 +28,7 @@ def render_video_intake_page(
     min_question_interval_seconds: float = 2.0,
     missing_settings: list[str] | None = None,
 ) -> None:
-    """Render the Phase 1-6 Streamlit workflow."""
+    """Render the Phase 1-10 Streamlit workflow."""
 
     st.set_page_config(page_title="YouTube RAG Pipeline", page_icon="film", layout="centered")
     _initialize_ui_state()
@@ -35,8 +36,8 @@ def render_video_intake_page(
     _render_retrieved_context_sidebar(st.session_state.get("latest_qa_response"))
     st.title("YouTube RAG Pipeline")
     st.caption(
-        "Phases 1-6: validate a YouTube URL, extract its transcript, build sentence-aware chunks, "
-        "store embeddings, answer grounded questions, and expose basic operational safeguards."
+        "Phases 1-10: validate a YouTube URL, extract its transcript, build sentence-aware chunks, "
+        "store embeddings, answer grounded questions, and chat across all ready knowledge by default."
     )
     if missing_settings:
         st.warning(
@@ -128,25 +129,47 @@ def render_video_intake_page(
     else:
         st.info("Submit a YouTube URL to start video intake.")
 
-    processed_video_id = st.session_state.get("processed_video_id")
-    if processed_video_id:
+    ready_sources = ingestion_service.list_ready_sources()
+    if ready_sources:
         st.divider()
         st.subheader("Ask Questions")
-        st.caption(f"Current processed video: `{processed_video_id}`")
+        latest_processed_video_id = st.session_state.get("processed_video_id")
+        if latest_processed_video_id:
+            st.caption(f"Latest processed video: `{latest_processed_video_id}`")
         st.caption(
             f"Questions are limited to {max_question_chars} characters with a "
             f"{min_question_interval_seconds:.1f}s minimum interval."
         )
+        scope_mode = st.radio(
+            "Scope",
+            options=["All Content", "Selected Content"],
+            horizontal=True,
+            help="All Content searches every ready source. Selected Content limits retrieval to chosen sources.",
+        )
+        selected_source_ids: list[str] = []
+        if scope_mode == "Selected Content":
+            source_options, default_selected_labels = _build_source_options(ready_sources)
+            selected_labels = st.multiselect(
+                "Choose sources",
+                options=list(source_options.keys()),
+                default=default_selected_labels,
+            )
+            selected_source_ids = [source_options[label] for label in selected_labels]
+            if not selected_source_ids:
+                st.info("Select one or more sources to limit retrieval, or switch back to All Content.")
         question = st.text_input(
-            "Question about the processed video",
+            "Question about your knowledge base",
             key="qa_question_input",
-            placeholder="What is the main topic of this video?",
+            placeholder="What is agentic RAG?",
         )
         ask_clicked = st.button("Ask Question", type="secondary")
         if ask_clicked:
             trimmed_question = question.strip()
             if not trimmed_question:
                 st.warning("Enter a question before asking.")
+                return
+            if scope_mode == "Selected Content" and not selected_source_ids:
+                st.warning("Select at least one source before asking in Selected Content mode.")
                 return
             if len(trimmed_question) > max_question_chars:
                 st.warning(f"Question is too long. Keep it under {max_question_chars} characters.")
@@ -157,11 +180,17 @@ def render_video_intake_page(
 
             _record_question_attempt()
             qa_response = qa_service.answer_question(
-                QARequest(video_id=processed_video_id, question=trimmed_question)
+                QARequest(
+                    video_id=None,
+                    selected_source_ids=selected_source_ids,
+                    question=trimmed_question,
+                )
             )
             st.session_state["latest_qa_response"] = qa_response.model_dump(mode="json")
             _record_qa_result(qa_response)
             _render_qa_response(qa_response)
+    else:
+        st.info("Process at least one source before asking questions.")
 
 
 def _initialize_ui_state() -> None:
@@ -241,6 +270,7 @@ def _render_qa_response(response: QAResponse) -> None:
         st.success(response.message)
         st.subheader("Answer")
         st.write(response.answer)
+        _render_answer_source_summary(response)
     elif response.status in {QAStatus.IRRELEVANT, QAStatus.NO_CONTEXT}:
         st.warning(response.message)
     else:
@@ -259,10 +289,38 @@ def _render_retrieved_context_sidebar(response_data: dict | None) -> None:
         start_time = chunk.get("start_time", 0.0)
         end_time = chunk.get("end_time", 0.0)
         chunk_id = chunk.get("chunk_id", "unknown")
+        source_title = chunk.get("source_title") or chunk.get("source_id") or chunk.get("video_id", "unknown")
         st.sidebar.caption(
+            f"Source: {source_title} | "
             f"Score: {similarity_score:.3f} | "
             f"Chunk ID: `{chunk_id}` | "
             f"Timestamp: {start_time:.2f}s - {end_time:.2f}s"
         )
         st.sidebar.write(chunk.get("text", ""))
         st.sidebar.divider()
+
+
+def _build_source_options(ready_sources: list[SourceRecord]) -> tuple[dict[str, str], list[str]]:
+    options: dict[str, str] = {}
+    default_selected_labels: list[str] = []
+    latest_processed_video_id = st.session_state.get("processed_video_id")
+    for source in ready_sources:
+        label = f"{source.title} ({source.source_type.value})"
+        if latest_processed_video_id and source.external_id == latest_processed_video_id:
+            latest_label = f"Latest Processed: {label}"
+            options[latest_label] = source.source_id
+            default_selected_labels = [latest_label]
+        options[label] = source.source_id
+    return options, default_selected_labels
+
+
+def _render_answer_source_summary(response: QAResponse) -> None:
+    source_titles = []
+    for chunk in response.sources:
+        title = chunk.source_title or chunk.source_id or chunk.video_id
+        if title not in source_titles:
+            source_titles.append(title)
+    if not source_titles:
+        return
+    label = "Sources" if len(source_titles) > 1 else "Source"
+    st.caption(f"{label}: {', '.join(source_titles)}")

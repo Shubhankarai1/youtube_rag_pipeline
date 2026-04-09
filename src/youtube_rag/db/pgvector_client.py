@@ -146,6 +146,38 @@ class PgVectorChunkRepository:
             connection.commit()
         return source
 
+    def list_ready_sources(self) -> list[SourceRecord]:
+        with self._get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    source_type,
+                    external_id,
+                    title,
+                    processing_status,
+                    source_url,
+                    normalized_url
+                FROM sources
+                WHERE processing_status = %s
+                ORDER BY created_at DESC, title ASC
+                """,
+                (SourceProcessingStatus.READY.value,),
+            ).fetchall()
+
+        return [
+            SourceRecord(
+                source_id=row["id"],
+                source_type=SourceType(row["source_type"]),
+                external_id=row["external_id"],
+                title=row["title"],
+                processing_status=SourceProcessingStatus(row["processing_status"]),
+                source_url=row["source_url"],
+                normalized_url=row["normalized_url"],
+            )
+            for row in rows
+        ]
+
     def store_embeddings(self, embedded_chunks: list[EmbeddedChunk]) -> None:
         if not embedded_chunks:
             return
