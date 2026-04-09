@@ -19,6 +19,7 @@ class TranscriptChunk(BaseModel):
 
     chunk_id: str = Field(min_length=1)
     video_id: str = Field(min_length=1)
+    source_id: str | None = None
     text: str = Field(min_length=1)
     start_time: float = Field(ge=0)
     end_time: float = Field(ge=0)
@@ -31,6 +32,7 @@ class EmbeddedChunk(BaseModel):
 
     chunk_id: str = Field(min_length=1)
     video_id: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
     text: str = Field(min_length=1)
     start_time: float = Field(ge=0)
     end_time: float = Field(ge=0)
@@ -43,6 +45,9 @@ class RetrievedChunk(BaseModel):
 
     chunk_id: str = Field(min_length=1)
     video_id: str = Field(min_length=1)
+    source_id: str | None = None
+    source_type: str | None = None
+    source_title: str | None = None
     text: str = Field(min_length=1)
     start_time: float = Field(ge=0)
     end_time: float = Field(ge=0)

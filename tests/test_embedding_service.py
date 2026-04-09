@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from youtube_rag.models.chunk import EmbeddedChunk, TranscriptChunk
 from youtube_rag.models.chunk import ChunkSentence
+from youtube_rag.models.source import SourceProcessingStatus, SourceRecord, SourceType
 from youtube_rag.services.embedding_service import EmbeddingService
 
 
@@ -22,12 +23,23 @@ class FakeRepository:
         self._has_video = has_video
         self.initialized = False
         self.stored: list[EmbeddedChunk] = []
+        self.registered_video_ids: list[str] = []
 
     def initialize_schema(self) -> None:
         self.initialized = True
 
     def has_video(self, video_id: str) -> bool:
         return self._has_video
+
+    def register_youtube_source(self, video_id: str) -> SourceRecord:
+        self.registered_video_ids.append(video_id)
+        return SourceRecord(
+            source_id=f"youtube:{video_id}",
+            source_type=SourceType.YOUTUBE,
+            external_id=video_id,
+            title=f"YouTube Video {video_id}",
+            processing_status=SourceProcessingStatus.READY,
+        )
 
     def store_embeddings(self, embedded_chunks: list[EmbeddedChunk]) -> None:
         self.stored.extend(embedded_chunks)
@@ -63,6 +75,8 @@ def test_persist_video_chunks_embeds_and_stores_chunks() -> None:
 
     assert repository.initialized is True
     assert len(repository.stored) == 2
+    assert repository.registered_video_ids == ["vid123"]
+    assert embedded_chunks[0].source_id == "youtube:vid123"
     assert embedded_chunks[0].embedding == [0.1, 0.2]
     assert embedded_chunks[1].embedding == [0.3, 0.4]
 
@@ -80,4 +94,5 @@ def test_persist_video_chunks_skips_duplicates() -> None:
     assert repository.initialized is True
     assert embedded_chunks == []
     assert repository.stored == []
+    assert repository.registered_video_ids == []
     assert embedding_client.inputs == []

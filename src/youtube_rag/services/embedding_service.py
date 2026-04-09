@@ -7,6 +7,7 @@ from typing import Protocol
 from openai import OpenAI
 
 from youtube_rag.models.chunk import EmbeddedChunk, TranscriptChunk
+from youtube_rag.models.source import SourceRecord
 
 
 class EmbeddingClient(Protocol):
@@ -24,6 +25,9 @@ class ChunkEmbeddingRepository(Protocol):
 
     def has_video(self, video_id: str) -> bool:
         """Return whether a video's chunks are already stored."""
+
+    def register_youtube_source(self, video_id: str) -> SourceRecord:
+        """Create or fetch the persistent source entry for a YouTube video."""
 
     def store_embeddings(self, embedded_chunks: list[EmbeddedChunk]) -> None:
         """Persist embedded chunks."""
@@ -68,11 +72,13 @@ class EmbeddingService:
             if self._repository.has_video(video_id):
                 return []
 
+            source = self._repository.register_youtube_source(video_id)
             embeddings = self._embedding_client.embed_texts([chunk.text for chunk in chunks])
             embedded_chunks = [
                 EmbeddedChunk(
                     chunk_id=chunk.chunk_id,
                     video_id=chunk.video_id,
+                    source_id=source.source_id,
                     text=chunk.text,
                     start_time=chunk.start_time,
                     end_time=chunk.end_time,
