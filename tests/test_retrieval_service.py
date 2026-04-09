@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from youtube_rag.models.chunk import RetrievedChunk
 from youtube_rag.services.retrieval_service import RetrievalService
 
@@ -88,7 +90,10 @@ def test_retrieve_supports_selected_source_filters() -> None:
         similarity_threshold=0.8,
     )
 
-    service.retrieve("search across selected sources", source_ids=["youtube:vid123", "youtube:vid456"])
+    service.retrieve(
+        "search across selected sources",
+        source_ids=["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"],
+    )
 
     assert retriever.calls == [
         {
@@ -96,7 +101,7 @@ def test_retrieve_supports_selected_source_filters() -> None:
             "top_k": 6,
             "similarity_threshold": 0.8,
             "video_id": None,
-            "source_ids": ["youtube:vid123", "youtube:vid456"],
+            "source_ids": ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"],
         }
     ]
 
@@ -107,7 +112,7 @@ def test_retrieve_reranks_by_lexical_overlap_and_limits_chunks_per_source() -> N
             RetrievedChunk(
                 chunk_id="vid123_0001",
                 video_id="vid123",
-                source_id="youtube:vid123",
+                source_id=UUID("11111111-1111-1111-1111-111111111111"),
                 source_title="Source A",
                 text="generic unrelated passage",
                 start_time=0.0,
@@ -117,7 +122,7 @@ def test_retrieve_reranks_by_lexical_overlap_and_limits_chunks_per_source() -> N
             RetrievedChunk(
                 chunk_id="vid123_0002",
                 video_id="vid123",
-                source_id="youtube:vid123",
+                source_id=UUID("11111111-1111-1111-1111-111111111111"),
                 source_title="Source A",
                 text="agentic rag orchestration and planning",
                 start_time=5.0,
@@ -127,7 +132,7 @@ def test_retrieve_reranks_by_lexical_overlap_and_limits_chunks_per_source() -> N
             RetrievedChunk(
                 chunk_id="vid456_0001",
                 video_id="vid456",
-                source_id="youtube:vid456",
+                source_id=UUID("22222222-2222-2222-2222-222222222222"),
                 source_title="Source B",
                 text="agentic rag with retrieval loops",
                 start_time=0.0,
@@ -137,7 +142,7 @@ def test_retrieve_reranks_by_lexical_overlap_and_limits_chunks_per_source() -> N
             RetrievedChunk(
                 chunk_id="vid456_0002",
                 video_id="vid456",
-                source_id="youtube:vid456",
+                source_id=UUID("22222222-2222-2222-2222-222222222222"),
                 source_title="Source B",
                 text="agentic rag agents and tools",
                 start_time=5.0,

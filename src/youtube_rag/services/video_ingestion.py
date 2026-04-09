@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Protocol
+from uuid import NAMESPACE_URL, uuid5
 
 from youtube_rag.models.video import (
     VideoAvailabilityStatus,
@@ -72,7 +73,7 @@ class InMemoryVideoRegistry:
 
         return [
             SourceRecord(
-                source_id=f"youtube:{video_id}",
+                source_id=uuid5(NAMESPACE_URL, f"youtube:{video_id}"),
                 source_type=SourceType.YOUTUBE,
                 external_id=video_id,
                 title=f"YouTube Video {video_id}",
@@ -116,7 +117,7 @@ class FileBackedVideoRegistry:
 
         return [
             SourceRecord(
-                source_id=f"youtube:{video_id}",
+                source_id=uuid5(NAMESPACE_URL, f"youtube:{video_id}"),
                 source_type=SourceType.YOUTUBE,
                 external_id=video_id,
                 title=f"YouTube Video {video_id}",

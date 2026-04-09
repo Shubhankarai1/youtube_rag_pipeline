@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
+from uuid import UUID
 
 
 class ChunkSentence(BaseModel):
@@ -19,7 +20,7 @@ class TranscriptChunk(BaseModel):
 
     chunk_id: str = Field(min_length=1)
     video_id: str = Field(min_length=1)
-    source_id: str | None = None
+    source_id: UUID | None = None
     text: str = Field(min_length=1)
     start_time: float = Field(ge=0)
     end_time: float = Field(ge=0)
@@ -32,7 +33,7 @@ class EmbeddedChunk(BaseModel):
 
     chunk_id: str = Field(min_length=1)
     video_id: str = Field(min_length=1)
-    source_id: str = Field(min_length=1)
+    source_id: UUID
     text: str = Field(min_length=1)
     start_time: float = Field(ge=0)
     end_time: float = Field(ge=0)
@@ -45,7 +46,7 @@ class RetrievedChunk(BaseModel):
 
     chunk_id: str = Field(min_length=1)
     video_id: str = Field(min_length=1)
-    source_id: str | None = None
+    source_id: UUID | None = None
     source_type: str | None = None
     source_title: str | None = None
     text: str = Field(min_length=1)

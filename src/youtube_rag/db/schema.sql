@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS sources (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE IF EXISTS sources
+    ADD COLUMN IF NOT EXISTS source_url TEXT;
+
+ALTER TABLE IF EXISTS sources
+    ADD COLUMN IF NOT EXISTS normalized_url TEXT;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sources_type_external_id
     ON sources (source_type, external_id);
 
@@ -25,6 +31,9 @@ CREATE TABLE IF NOT EXISTS video_chunks (
     end_time DOUBLE PRECISION NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE IF EXISTS video_chunks
+    ADD COLUMN IF NOT EXISTS source_id TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_video_chunks_video_id
     ON video_chunks (video_id);

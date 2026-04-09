@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +27,7 @@ class SourceProcessingStatus(str, Enum):
 class SourceRecord(BaseModel):
     """Persistent source registry entry."""
 
-    source_id: str = Field(min_length=1)
+    source_id: UUID
     source_type: SourceType
     external_id: str = Field(min_length=1)
     title: str = Field(min_length=1)

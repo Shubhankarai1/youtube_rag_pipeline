@@ -132,7 +132,7 @@ def render_video_intake_page(
     ready_sources = ingestion_service.list_ready_sources()
     if ready_sources:
         st.divider()
-        st.subheader("Ask Questions")
+        st.subheader("Chat")
         latest_processed_video_id = st.session_state.get("processed_video_id")
         if latest_processed_video_id:
             st.caption(f"Latest processed video: `{latest_processed_video_id}`")
@@ -157,14 +157,13 @@ def render_video_intake_page(
             selected_source_ids = [source_options[label] for label in selected_labels]
             if not selected_source_ids:
                 st.info("Select one or more sources to limit retrieval, or switch back to All Content.")
-        question = st.text_input(
-            "Question about your knowledge base",
-            key="qa_question_input",
-            placeholder="What is agentic RAG?",
-        )
-        ask_clicked = st.button("Ask Question", type="secondary")
-        if ask_clicked:
-            trimmed_question = question.strip()
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        prompt = st.chat_input("Ask a question...")
+        if prompt:
+            trimmed_question = prompt.strip()
             if not trimmed_question:
                 st.warning("Enter a question before asking.")
                 return
@@ -178,6 +177,10 @@ def render_video_intake_page(
                 st.warning("Please wait a moment before sending another question.")
                 return
 
+            st.session_state.messages.append({"role": "user", "content": trimmed_question})
+            with st.chat_message("user"):
+                st.markdown(trimmed_question)
+
             _record_question_attempt()
             qa_response = qa_service.answer_question(
                 QARequest(
@@ -188,12 +191,16 @@ def render_video_intake_page(
             )
             st.session_state["latest_qa_response"] = qa_response.model_dump(mode="json")
             _record_qa_result(qa_response)
-            _render_qa_response(qa_response)
+            assistant_message = _qa_response_to_chat_message(qa_response)
+            st.session_state.messages.append({"role": "assistant", "content": assistant_message})
+            with st.chat_message("assistant"):
+                st.markdown(assistant_message)
     else:
         st.info("Process at least one source before asking questions.")
 
 
 def _initialize_ui_state() -> None:
+    st.session_state.setdefault("messages", [])
     st.session_state.setdefault(
         "ui_metrics",
         {
@@ -265,16 +272,13 @@ def _chunk_to_preview(chunk: TranscriptChunk) -> dict:
     }
 
 
-def _render_qa_response(response: QAResponse) -> None:
+def _qa_response_to_chat_message(response: QAResponse) -> str:
     if response.status == QAStatus.ANSWERED and response.answer:
-        st.success(response.message)
-        st.subheader("Answer")
-        st.write(response.answer)
-        _render_answer_source_summary(response)
-    elif response.status in {QAStatus.IRRELEVANT, QAStatus.NO_CONTEXT}:
-        st.warning(response.message)
-    else:
-        st.error(response.message)
+        source_summary = _build_answer_source_summary(response)
+        if source_summary:
+            return f"{response.answer}\n\n{source_summary}"
+        return response.answer
+    return response.message
 
 
 def _render_retrieved_context_sidebar(response_data: dict | None) -> None:
@@ -308,19 +312,19 @@ def _build_source_options(ready_sources: list[SourceRecord]) -> tuple[dict[str, 
         label = f"{source.title} ({source.source_type.value})"
         if latest_processed_video_id and source.external_id == latest_processed_video_id:
             latest_label = f"Latest Processed: {label}"
-            options[latest_label] = source.source_id
+            options[latest_label] = str(source.source_id)
             default_selected_labels = [latest_label]
-        options[label] = source.source_id
+        options[label] = str(source.source_id)
     return options, default_selected_labels
 
 
-def _render_answer_source_summary(response: QAResponse) -> None:
+def _build_answer_source_summary(response: QAResponse) -> str:
     source_titles = []
     for chunk in response.sources:
-        title = chunk.source_title or chunk.source_id or chunk.video_id
+        title = chunk.source_title or (str(chunk.source_id) if chunk.source_id else None) or chunk.video_id
         if title not in source_titles:
             source_titles.append(title)
     if not source_titles:
-        return
+        return ""
     label = "Sources" if len(source_titles) > 1 else "Source"
-    st.caption(f"{label}: {', '.join(source_titles)}")
+    return f"{label}: {', '.join(source_titles)}"

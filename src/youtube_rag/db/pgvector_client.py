@@ -25,6 +25,8 @@ class PgVectorChunkRepository:
         with self._get_connection() as connection:
             connection.execute(self._schema_path.read_text(encoding="utf-8"))
             connection.execute("ALTER TABLE video_chunks ADD COLUMN IF NOT EXISTS source_id TEXT")
+            connection.execute("ALTER TABLE sources ADD COLUMN IF NOT EXISTS source_url TEXT")
+            connection.execute("ALTER TABLE sources ADD COLUMN IF NOT EXISTS normalized_url TEXT")
             self._backfill_sources(connection)
             connection.commit()
 
@@ -60,7 +62,7 @@ class PgVectorChunkRepository:
 
     def start_processing(self, *, video_id: str, source_url: str, normalized_url: str) -> None:
         source = SourceRecord(
-            source_id=_youtube_source_id(video_id),
+            source_id=self._resolve_source_id(video_id),
             source_type=SourceType.YOUTUBE,
             external_id=video_id,
             title=f"YouTube Video {video_id}",
@@ -81,7 +83,7 @@ class PgVectorChunkRepository:
                     normalized_url
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
+                ON CONFLICT (source_type, external_id) DO UPDATE SET
                     title = EXCLUDED.title,
                     processing_status = EXCLUDED.processing_status,
                     source_url = EXCLUDED.source_url,
@@ -107,7 +109,7 @@ class PgVectorChunkRepository:
 
     def ensure_youtube_source(self, video_id: str) -> SourceRecord:
         source = SourceRecord(
-            source_id=_youtube_source_id(video_id),
+            source_id=self._resolve_source_id(video_id),
             source_type=SourceType.YOUTUBE,
             external_id=video_id,
             title=f"YouTube Video {video_id}",
@@ -128,7 +130,7 @@ class PgVectorChunkRepository:
                     normalized_url
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
+                ON CONFLICT (source_type, external_id) DO UPDATE SET
                     title = EXCLUDED.title,
                     source_url = EXCLUDED.source_url,
                     normalized_url = EXCLUDED.normalized_url
@@ -167,7 +169,7 @@ class PgVectorChunkRepository:
 
         return [
             SourceRecord(
-                source_id=row["id"],
+                source_id=str(row["id"]),
                 source_type=SourceType(row["source_type"]),
                 external_id=row["external_id"],
                 title=row["title"],
@@ -288,7 +290,7 @@ class PgVectorChunkRepository:
         ).fetchall()
         for row in rows:
             video_id = row["video_id"]
-            source_id = _youtube_source_id(video_id)
+            source_id = self._resolve_source_id(video_id, connection=connection)
             connection.execute(
                 """
                 INSERT INTO sources (
@@ -301,7 +303,7 @@ class PgVectorChunkRepository:
                     normalized_url
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO NOTHING
+                ON CONFLICT (source_type, external_id) DO NOTHING
                 """,
                 (
                     source_id,
@@ -317,10 +319,28 @@ class PgVectorChunkRepository:
                 """
                 UPDATE video_chunks
                 SET source_id = %s
-                WHERE video_id = %s AND (source_id IS NULL OR source_id = '')
+                WHERE video_id = %s AND source_id IS NULL
                 """,
                 (source_id, video_id),
             )
+
+    def _resolve_source_id(self, video_id: str, *, connection=None) -> str:
+        if connection is None:
+            with self._get_connection() as owned_connection:
+                return self._resolve_source_id(video_id, connection=owned_connection)
+
+        row = connection.execute(
+            """
+            SELECT id
+            FROM sources
+            WHERE source_type = %s AND external_id = %s
+            LIMIT 1
+            """,
+            (SourceType.YOUTUBE.value, video_id),
+        ).fetchone()
+        if row is not None and row.get("id") is not None:
+            return str(row["id"])
+        return str(uuid4())
 
     def _mark_source_status(self, video_id: str, status: SourceProcessingStatus) -> None:
         with self._get_connection() as connection:
@@ -345,7 +365,3 @@ class PgVectorChunkRepository:
 
 def _embedding_to_vector_literal(values: list[float]) -> str:
     return "[" + ",".join(str(value) for value in values) + "]"
-
-
-def _youtube_source_id(video_id: str) -> str:
-    return f"youtube:{video_id}"

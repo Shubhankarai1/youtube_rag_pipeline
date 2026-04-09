@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from uuid import UUID
 
 from youtube_rag.db.pgvector_client import PgVectorChunkRepository
 
@@ -14,13 +15,16 @@ class FakeResult:
     def fetchall(self) -> list[dict]:
         return self._rows
 
+    def fetchone(self) -> dict | None:
+        return self._rows[0] if self._rows else None
+
 
 class FakeConnection:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
         self.commit_calls = 0
 
-    def execute(self, query: str, parameters: tuple[object, ...]) -> FakeResult:
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> FakeResult:
         self.calls.append({"query": query, "parameters": parameters})
         return FakeResult([])
 
@@ -96,15 +100,34 @@ def test_start_processing_persists_processing_source_registry_entry() -> None:
         normalized_url="https://www.youtube.com/watch?v=vid123",
     )
 
-    assert len(connection.calls) == 1
-    assert "INSERT INTO sources" in connection.calls[0]["query"]
-    assert connection.calls[0]["parameters"] == (
-        "youtube:vid123",
+    assert len(connection.calls) == 2
+    assert "SELECT id" in connection.calls[0]["query"]
+    assert "INSERT INTO sources" in connection.calls[1]["query"]
+    inserted_source_id = connection.calls[1]["parameters"][0]
+    assert isinstance(inserted_source_id, UUID)
+    assert connection.calls[1]["parameters"] == (
+        inserted_source_id,
         "youtube",
         "vid123",
         "YouTube Video vid123",
         "processing",
         "https://youtu.be/vid123",
         "https://www.youtube.com/watch?v=vid123",
+    )
+    assert connection.commit_calls == 1
+
+
+def test_initialize_schema_adds_missing_source_url_columns_for_existing_sources_table() -> None:
+    connection = FakeConnection()
+    repository = FakePgVectorChunkRepository(connection)
+
+    repository.initialize_schema()
+
+    executed_queries = [call["query"] for call in connection.calls]
+
+    assert any("ALTER TABLE sources ADD COLUMN IF NOT EXISTS source_url TEXT" in query for query in executed_queries)
+    assert any(
+        "ALTER TABLE sources ADD COLUMN IF NOT EXISTS normalized_url TEXT" in query
+        for query in executed_queries
     )
     assert connection.commit_calls == 1

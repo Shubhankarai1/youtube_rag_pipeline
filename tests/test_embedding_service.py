@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from youtube_rag.models.chunk import EmbeddedChunk, TranscriptChunk
 from youtube_rag.models.chunk import ChunkSentence
 from youtube_rag.models.source import SourceProcessingStatus, SourceRecord, SourceType
@@ -34,7 +36,7 @@ class FakeRepository:
     def ensure_youtube_source(self, video_id: str) -> SourceRecord:
         self.registered_video_ids.append(video_id)
         return SourceRecord(
-            source_id=f"youtube:{video_id}",
+            source_id=UUID("11111111-1111-1111-1111-111111111111"),
             source_type=SourceType.YOUTUBE,
             external_id=video_id,
             title=f"YouTube Video {video_id}",
@@ -76,7 +78,7 @@ def test_persist_video_chunks_embeds_and_stores_chunks() -> None:
     assert repository.initialized is True
     assert len(repository.stored) == 2
     assert repository.registered_video_ids == ["vid123"]
-    assert embedded_chunks[0].source_id == "youtube:vid123"
+    assert embedded_chunks[0].source_id == UUID("11111111-1111-1111-1111-111111111111")
     assert embedded_chunks[0].embedding == [0.1, 0.2]
     assert embedded_chunks[1].embedding == [0.3, 0.4]
 

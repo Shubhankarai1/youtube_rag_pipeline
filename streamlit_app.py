@@ -53,6 +53,7 @@ def main() -> None:
     )
     if config is not None:
         repository = PgVectorChunkRepository(config.database_url)
+        repository.initialize_schema()
         ingestion_service = VideoIngestionService(
             source_repository=repository,
             availability_checker=StaticAvailabilityChecker(),

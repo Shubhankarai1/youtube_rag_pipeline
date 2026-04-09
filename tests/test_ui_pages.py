@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from youtube_rag.models.qa import QAResponse, QAStatus
 from youtube_rag.models.source import SourceProcessingStatus, SourceRecord, SourceType
 from youtube_rag.ui import pages
@@ -14,6 +16,7 @@ def test_record_question_attempt_and_rate_limit(monkeypatch) -> None:
 
     pages._record_question_attempt()
 
+    assert pages.st.session_state["messages"] == []
     assert pages.st.session_state["ui_metrics"]["questions_asked"] == 1
     assert pages._is_rate_limited(2.0) is True
 
@@ -42,14 +45,14 @@ def test_build_source_options_marks_latest_processed(monkeypatch) -> None:
     monkeypatch.setattr(pages.st, "session_state", {"processed_video_id": "vid123"})
     ready_sources = [
         SourceRecord(
-            source_id="youtube:vid123",
+            source_id=UUID("11111111-1111-1111-1111-111111111111"),
             source_type=SourceType.YOUTUBE,
             external_id="vid123",
             title="YouTube Video vid123",
             processing_status=SourceProcessingStatus.READY,
         ),
         SourceRecord(
-            source_id="youtube:vid456",
+            source_id=UUID("22222222-2222-2222-2222-222222222222"),
             source_type=SourceType.YOUTUBE,
             external_id="vid456",
             title="YouTube Video vid456",
@@ -59,6 +62,6 @@ def test_build_source_options_marks_latest_processed(monkeypatch) -> None:
 
     options, default_selected_labels = pages._build_source_options(ready_sources)
 
-    assert options["Latest Processed: YouTube Video vid123 (youtube)"] == "youtube:vid123"
-    assert options["YouTube Video vid456 (youtube)"] == "youtube:vid456"
+    assert options["Latest Processed: YouTube Video vid123 (youtube)"] == "11111111-1111-1111-1111-111111111111"
+    assert options["YouTube Video vid456 (youtube)"] == "22222222-2222-2222-2222-222222222222"
     assert default_selected_labels == ["Latest Processed: YouTube Video vid123 (youtube)"]

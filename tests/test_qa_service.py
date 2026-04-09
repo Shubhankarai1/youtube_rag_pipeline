@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from youtube_rag.models.chunk import RetrievedChunk
 from youtube_rag.models.qa import QARequest, QAStatus
 from youtube_rag.services.qa_service import QAService, _build_context
@@ -131,7 +133,7 @@ def test_answer_question_supports_selected_source_scope() -> None:
             RetrievedChunk(
                 chunk_id="vid123_0001",
                 video_id="vid123",
-                source_id="youtube:vid123",
+                source_id=UUID("11111111-1111-1111-1111-111111111111"),
                 source_type="youtube",
                 source_title="YouTube Video vid123",
                 text="The video explains agentic retrieval.",
@@ -149,7 +151,7 @@ def test_answer_question_supports_selected_source_scope() -> None:
     response = service.answer_question(
         QARequest(
             question="What does this source explain?",
-            selected_source_ids=["youtube:vid123"],
+            selected_source_ids=["11111111-1111-1111-1111-111111111111"],
         )
     )
 
@@ -158,6 +160,6 @@ def test_answer_question_supports_selected_source_scope() -> None:
         {
             "query": "What does this source explain?",
             "video_id": None,
-            "source_ids": ["youtube:vid123"],
+            "source_ids": ["11111111-1111-1111-1111-111111111111"],
         }
     ]
