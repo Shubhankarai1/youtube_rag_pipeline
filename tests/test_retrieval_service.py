@@ -59,6 +59,7 @@ def test_retrieve_embeds_query_and_returns_ranked_chunks() -> None:
         embedding_client=FakeEmbeddingClient([0.1, 0.2]),
         retriever=retriever,
         top_k=5,
+        retrieval_candidates=5,
         similarity_threshold=0.75,
     )
 
@@ -83,6 +84,7 @@ def test_retrieve_supports_selected_source_filters() -> None:
         embedding_client=FakeEmbeddingClient([0.3, 0.4]),
         retriever=retriever,
         top_k=3,
+        retrieval_candidates=6,
         similarity_threshold=0.8,
     )
 
@@ -91,9 +93,72 @@ def test_retrieve_supports_selected_source_filters() -> None:
     assert retriever.calls == [
         {
             "query_embedding": [0.3, 0.4],
-            "top_k": 3,
+            "top_k": 6,
             "similarity_threshold": 0.8,
             "video_id": None,
             "source_ids": ["youtube:vid123", "youtube:vid456"],
         }
+    ]
+
+
+def test_retrieve_reranks_by_lexical_overlap_and_limits_chunks_per_source() -> None:
+    retriever = FakeRetriever(
+        [
+            RetrievedChunk(
+                chunk_id="vid123_0001",
+                video_id="vid123",
+                source_id="youtube:vid123",
+                source_title="Source A",
+                text="generic unrelated passage",
+                start_time=0.0,
+                end_time=5.0,
+                similarity_score=0.95,
+            ),
+            RetrievedChunk(
+                chunk_id="vid123_0002",
+                video_id="vid123",
+                source_id="youtube:vid123",
+                source_title="Source A",
+                text="agentic rag orchestration and planning",
+                start_time=5.0,
+                end_time=10.0,
+                similarity_score=0.80,
+            ),
+            RetrievedChunk(
+                chunk_id="vid456_0001",
+                video_id="vid456",
+                source_id="youtube:vid456",
+                source_title="Source B",
+                text="agentic rag with retrieval loops",
+                start_time=0.0,
+                end_time=5.0,
+                similarity_score=0.81,
+            ),
+            RetrievedChunk(
+                chunk_id="vid456_0002",
+                video_id="vid456",
+                source_id="youtube:vid456",
+                source_title="Source B",
+                text="agentic rag agents and tools",
+                start_time=5.0,
+                end_time=10.0,
+                similarity_score=0.79,
+            ),
+        ]
+    )
+    service = RetrievalService(
+        embedding_client=FakeEmbeddingClient([0.5, 0.6]),
+        retriever=retriever,
+        top_k=3,
+        retrieval_candidates=4,
+        similarity_threshold=0.7,
+        max_chunks_per_source=1,
+    )
+
+    results = service.retrieve("agentic rag")
+
+    assert [chunk.chunk_id for chunk in results] == [
+        "vid456_0001",
+        "vid123_0002",
+        "vid456_0002",
     ]

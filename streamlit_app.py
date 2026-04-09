@@ -70,7 +70,9 @@ def main() -> None:
                 embedding_client=embedding_client,
                 retriever=repository,
                 top_k=config.top_k_results,
+                retrieval_candidates=config.retrieval_candidates,
                 similarity_threshold=config.similarity_threshold,
+                max_chunks_per_source=config.max_chunks_per_source,
             ),
             answer_generator=OpenAIAnswerGenerator(
                 api_key=config.openai_api_key,

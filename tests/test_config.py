@@ -23,6 +23,8 @@ def test_config_loads_required_and_default_values(monkeypatch) -> None:
     assert config.database_url.startswith("postgresql://")
     assert config.log_level == "DEBUG"
     assert config.top_k_results == 5
+    assert config.retrieval_candidates == 12
+    assert config.max_chunks_per_source == 2
     assert config.max_question_chars == 500
     assert config.min_question_interval_seconds == 2.0
     assert config.max_context_chars == 6000

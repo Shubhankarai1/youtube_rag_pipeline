@@ -2,9 +2,9 @@
 
 Build an end-to-end Retrieval-Augmented Generation (RAG) system that allows users to input a YouTube video URL and ask questions based on its content. The system retrieves relevant transcript chunks, generates grounded answers from those chunks, and refuses unsupported questions when retrieval does not meet the configured relevance bar.
 
-## Phase 1-6 status
+## Phase 1-11 status
 
-The current repo now covers the MVP foundation through release-readiness basics:
+The current repo now covers the MVP foundation plus advanced continuous-knowledge chat:
 
 - environment-backed config loading
 - persistent duplicate detection for processed YouTube videos
@@ -15,6 +15,9 @@ The current repo now covers the MVP foundation through release-readiness basics:
 - OpenAI embedding generation for chunks
 - PostgreSQL + pgvector persistence for chunk embeddings
 - top-k semantic retrieval with enforced similarity thresholding
+- all-content chat by default with optional selected-source scope
+- source-aware retrieval with persistent source registry
+- candidate expansion, lightweight reranking, and per-source diversity control
 - grounded answer generation from transcript context only
 - basic session-level runtime metrics in the sidebar
 - question-length and request-interval safeguards for local MVP usage
@@ -47,7 +50,9 @@ The current repo now covers the MVP foundation through release-readiness basics:
 ## Important environment settings
 
 - `TOP_K_RESULTS`: number of retrieved chunks considered for answers
+- `RETRIEVAL_CANDIDATES`: number of initial vector hits fetched before reranking
 - `SIMILARITY_THRESHOLD`: minimum similarity required before chunks are eligible
+- `MAX_CHUNKS_PER_SOURCE`: diversity cap applied after reranking
 - `CHUNK_MAX_TOKENS`: maximum chunk size for sentence-aware chunking
 - `MAX_QUESTION_CHARS`: question-length guardrail in the UI and request model
 - `MIN_QUESTION_INTERVAL_SECONDS`: local request pacing safeguard

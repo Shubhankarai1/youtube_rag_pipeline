@@ -21,7 +21,9 @@ class AppConfig(BaseModel):
     app_env: str = "development"
     log_level: str = "INFO"
     top_k_results: int = 5
+    retrieval_candidates: int = 12
     similarity_threshold: float = 0.3
+    max_chunks_per_source: int = 2
     chunk_max_tokens: int = 500
     max_question_chars: int = 500
     min_question_interval_seconds: float = 2.0
@@ -67,7 +69,9 @@ def get_config() -> AppConfig:
         app_env=os.getenv("APP_ENV", "development"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         top_k_results=int(os.getenv("TOP_K_RESULTS", "5")),
+        retrieval_candidates=int(os.getenv("RETRIEVAL_CANDIDATES", "12")),
         similarity_threshold=float(os.getenv("SIMILARITY_THRESHOLD", "0.3")),
+        max_chunks_per_source=int(os.getenv("MAX_CHUNKS_PER_SOURCE", "2")),
         chunk_max_tokens=int(os.getenv("CHUNK_MAX_TOKENS", "500")),
         max_question_chars=int(os.getenv("MAX_QUESTION_CHARS", "500")),
         min_question_interval_seconds=float(os.getenv("MIN_QUESTION_INTERVAL_SECONDS", "2.0")),
