@@ -67,10 +67,24 @@ OpenAI embeddings (e.g. text-embedding-3-small)
 Database:
 PostgreSQL with pgvector
 Schema:
+Tables: sources, video_chunks
+
+Table: sources
+
+- id (UUID)
+- source_type (TEXT)
+- external_id (TEXT)
+- title (TEXT)
+- processing_status (TEXT)
+- source_url (TEXT, nullable)
+- normalized_url (TEXT, nullable)
+- created_at (TIMESTAMP)
+
 Table: video_chunks
 
 - id (UUID)
 - video_id (TEXT)
+- source_id (UUID)
 - chunk_id (TEXT)
 - content (TEXT)
 - embedding (VECTOR)
@@ -80,7 +94,7 @@ Table: video_chunks
 
 Requirements:
 Batch embedding for efficiency
-Store metadata for retrieval and citations
+Store source metadata for retrieval, attribution, and multi-source scope filtering
 
 3.5 Query Answering + Relevance Detection
 Step 1: Query Embedding
@@ -116,13 +130,23 @@ Transcript extraction
 Chunking
 Embedding progress
 3. Chat Interface
-Input: User question
+ChatGPT-style conversational interface using Streamlit chat components
+Persistent session chat history shown on every rerun
+Input via chat composer
 Output:
-Answer
-"Irrelevant question" message (if triggered)
+Grounded assistant response
+"Irrelevant question" or "no context" message (if triggered)
 4. Optional Enhancements
 Show retrieved chunks
 Clickable timestamps to open video
+
+Implemented UX notes:
+Scope selector with:
+- All Content (default)
+- Selected Content
+Selected-source multiselect for source-aware retrieval
+Sidebar runtime metrics and retrieved-context inspection
+Question length and minimum-interval safeguards
 
 5. System Architecture
 [Streamlit UI]
@@ -228,7 +252,7 @@ Returned chunks should include source metadata for attribution and debugging
 13.6 Deduplication and Persistence
 Avoid reprocessing the same video or document multiple times
 Deduplication should be persistent, not only session-based
-Each source should have a stable identity in storage
+Each source should have a stable UUID identity in storage
 Indexed sources should remain available across sessions
 
 13.7 Data Model Direction
@@ -236,7 +260,7 @@ The architecture should evolve from video-centric storage to source-centric stor
 Recommended logical entities:
 
 Source
-- source_id
+- source_id (UUID)
 - source_type (youtube, document, etc.)
 - external_id or file hash
 - title
@@ -245,7 +269,7 @@ Source
 
 Chunk
 - chunk_id
-- source_id
+- source_id (UUID foreign key/reference)
 - content
 - embedding
 - timestamp or page reference
@@ -266,3 +290,20 @@ Keep chat memory separate from knowledge-base memory
 Prefer persistent source-level deduplication over temporary in-memory checks
 Make source attribution explicit when answers rely on multiple uploads
 Preserve the default simplicity of the chat UX even as retrieval becomes multi-source
+
+14. Current Implementation Status
+Implemented in the current codebase:
+- YouTube intake with validation, availability checks, and duplicate detection
+- Transcript extraction through `youtube-transcript-api`
+- Sentence-aware chunking with NLTK and BERT-token limits
+- OpenAI embeddings persisted to PostgreSQL + pgvector
+- Source registry plus chunk storage with UUID source identifiers
+- Multi-source retrieval with All Content default and Selected Content filtering
+- Chat-style Streamlit Q&A interface with session chat history
+- Sidebar inspection for runtime metrics and retrieved chunks
+
+Not yet implemented:
+- Document ingestion
+- Clickable timestamp deep links in answers
+- Production queue / async background jobs
+- Multi-user auth or tenant isolation

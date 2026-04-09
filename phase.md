@@ -1,5 +1,21 @@
 # YouTube RAG Pipeline Execution Roadmap
 
+## Current Status Snapshot
+
+Implemented as of the current codebase:
+- Phase 1 through Phase 11 core paths are present for the YouTube workflow
+- Streamlit now uses a chat-style Q&A interface with session chat history
+- Retrieval defaults to All Content and supports Selected Content filtering
+- Storage is source-centric with `sources` plus `video_chunks`
+- `source_id` is UUID-based in the PostgreSQL-backed data model
+- Schema bootstrap and compatibility upgrades run on app startup
+
+Still future or partial:
+- Document ingestion beyond YouTube
+- Clickable timestamp deep links in answers
+- Async/background ingestion
+- Multi-user isolation and production-grade observability
+
 ## Track 1: MVP Foundation
 
 ## Phase 1: Project Foundation and Video Intake
@@ -147,7 +163,7 @@ Persist chunk embeddings in `PostgreSQL + pgvector` and support reliable semanti
 
 ### Significant Components
 - Provision PostgreSQL with `pgvector`.
-- Create the `video_chunks` table and indexes.
+- Create the `sources` and `video_chunks` tables and indexes.
 - Implement batch embedding generation using OpenAI embeddings.
 - Store embeddings and metadata for each chunk.
 - Prevent repeated embedding of already-ingested videos.
@@ -155,7 +171,7 @@ Persist chunk embeddings in `PostgreSQL + pgvector` and support reliable semanti
 - Return retrieved chunks with citation metadata.
 
 ### Deliverables
-- Database schema and migration scripts.
+- Database schema and startup-compatible migration behavior.
 - Embedding pipeline with batching and retry behavior.
 - Repository or service layer for insert and retrieval operations.
 - Retrieval endpoint or internal function returning ranked chunks.
@@ -241,8 +257,8 @@ Turn the working pipeline into a usable MVP with operational visibility, basic s
 ### Significant Components
 - Complete Streamlit chat experience for:
   - processing status
-  - question input
-  - answer display
+  - conversational question input
+  - assistant answer display
   - irrelevant-question messaging
   - optional retrieved chunk display
 - Add timestamp-based source references and clickable links where practical.
@@ -292,6 +308,7 @@ Evolve storage from a single-video pipeline into a persistent knowledge base whe
 ### Significant Components
 - Introduce a `sources` table or equivalent source registry.
 - Move from `video_id`-only thinking to `source_id`, `source_type`, and `external_id` or file hash.
+- Use UUID source identifiers in storage and retrieval paths.
 - Track source processing lifecycle:
   - pending
   - processing
@@ -405,7 +422,7 @@ Allow the user to ask questions across all uploaded knowledge by default while p
 Turn the interface into a continuous chat experience where uploads expand the same knowledge space instead of replacing it.
 
 ### Significant Components
-- Replace the single active `processed_video_id` UI model with persistent chat scope.
+- Replace the single-question UI with persistent conversational chat scope.
 - Default chat mode:
   - All Content
 - Optional scope mode:
@@ -415,7 +432,7 @@ Turn the interface into a continuous chat experience where uploads expand the sa
 - Surface source attribution clearly when answers use multiple uploads.
 
 ### Deliverables
-- Updated Streamlit chat UX for continuous multi-source conversation.
+- Updated Streamlit chat UX for continuous multi-source conversation using `st.chat_input` and `st.chat_message`.
 - Scope selector UI.
 - Source list or source picker component.
 - Multi-source answer display with visible attribution.

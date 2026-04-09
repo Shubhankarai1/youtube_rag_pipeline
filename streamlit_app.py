@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # ✅ Load environment variables FIRST (after __future__)
 from dotenv import load_dotenv
+import os
 from pathlib import Path
 import sys
 
@@ -53,7 +54,8 @@ def main() -> None:
     )
     if config is not None:
         repository = PgVectorChunkRepository(config.database_url)
-        repository.initialize_schema()
+        if os.getenv("ENV", "prod") == "dev":
+            repository.initialize_schema()
         ingestion_service = VideoIngestionService(
             source_repository=repository,
             availability_checker=StaticAvailabilityChecker(),

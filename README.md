@@ -8,15 +8,15 @@ The current repo now covers the MVP foundation plus advanced continuous-knowledg
 
 - environment-backed config loading
 - persistent duplicate detection for processed YouTube videos
-- Streamlit intake page with processing status and retrieved-context inspection
+- Streamlit intake page with processing status, chat history, and retrieved-context inspection
 - transcript extraction and normalization with `youtube-transcript-api`
 - sentence-aware chunking with NLTK
 - BERT-token-limited chunks using a HuggingFace tokenizer
 - OpenAI embedding generation for chunks
-- PostgreSQL + pgvector persistence for chunk embeddings
+- PostgreSQL + pgvector persistence for chunk embeddings and source registry records
 - top-k semantic retrieval with enforced similarity thresholding
 - all-content chat by default with optional selected-source scope
-- source-aware retrieval with persistent source registry
+- source-aware retrieval with persistent source registry and UUID source identifiers
 - candidate expansion, lightweight reranking, and per-source diversity control
 - grounded answer generation from transcript context only
 - basic session-level runtime metrics in the sidebar
@@ -61,7 +61,11 @@ The current repo now covers the MVP foundation plus advanced continuous-knowledg
 ## Operational behavior
 
 - Duplicate video submissions are persisted in `data/processed_videos.json`.
-- The app initializes the `video_chunks` schema automatically when embeddings are first stored.
+- The app initializes and upgrades the PostgreSQL schema on startup before the UI queries ready sources.
+- The database schema is source-centric:
+  - `sources` stores source metadata and processing state
+  - `video_chunks` stores transcript chunks, embeddings, and UUID `source_id` references
+- The Q&A experience uses Streamlit chat components and keeps session chat history in memory for the active browser session.
 - The sidebar exposes session-level counters for:
   - videos processed
   - questions asked
@@ -70,12 +74,36 @@ The current repo now covers the MVP foundation plus advanced continuous-knowledg
   - processing errors
   - QA errors
 
+## Data model
+
+- `sources`
+  - `id` (`UUID`)
+  - `source_type` (`TEXT`)
+  - `external_id` (`TEXT`)
+  - `title` (`TEXT`)
+  - `processing_status` (`TEXT`)
+  - `source_url` (`TEXT`, nullable)
+  - `normalized_url` (`TEXT`, nullable)
+  - `created_at` (`TIMESTAMP`)
+- `video_chunks`
+  - `id` (`UUID`)
+  - `video_id` (`TEXT`)
+  - `source_id` (`UUID`)
+  - `chunk_id` (`TEXT`)
+  - `content` (`TEXT`)
+  - `embedding` (`VECTOR`)
+  - `start_time` (`DOUBLE PRECISION`)
+  - `end_time` (`DOUBLE PRECISION`)
+  - `created_at` (`TIMESTAMP`)
+
 ## MVP limitations
 
 - Duplicate tracking is persistent locally but not yet multi-user aware.
+- The fallback local registry remains single-user and is meant for MVP/local development only.
 - Rate limiting is session-based and intended as an MVP safeguard, not a production abuse-prevention layer.
 - Observability is still log-driven; there is no external metrics backend yet.
 - Deployment is still simplest as a single Streamlit app backed by PostgreSQL.
+- Document ingestion is still future scope; the current app indexes YouTube sources only.
 
 ## Deployment notes
 
